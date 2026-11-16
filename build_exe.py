@@ -44,12 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "The Goat Man got worse.",
-    "A lipless bone muzzle with rows of flat, human teeth. Four yellow eyes.",
-    "Massive ridged ram horns, jagged brow horns, spines through his hump.",
-    "Ribs showing through his flanks. Long claws. Split hooves.",
-    "He pins the Moose Man down while he eats now.",
-    "The F9 skip-to-the-ending shortcut has been removed.",
+    "CHAPTER TWO.  One day later.",
+    "You wake in a log cabin. The stove is out. A snowstorm is coming.",
+    "Find 20 bundles of firewood and stack them on the porch.",
+    "The Goat Man is out there in the snow, looking for you.",
+    "Finish Chapter One to unlock it on the title screen.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

@@ -59,6 +59,26 @@ python src/game.py
 - If he catches you, you wake up at the sewer entrance. Valves you have
   already opened stay open.
 
+## Chapter Two
+
+*One day later.* You wake on a cot in a small log cabin. The stove is out and a
+snowstorm is coming. Take the lantern and go out for firewood.
+
+- Find **20 bundles of firewood** out in the snow. There are more than 20 on
+  the map, scattered between the rivers, the lake, the hunting stand and the
+  dock.
+- **E** picks a bundle up. **E at the woodpile** on the cabin porch stacks
+  everything you're carrying. Stacked wood is safe.
+- **The Goat Man is out there looking for you.** Your lantern (**F**) lets him
+  see you from much further away. Running and splashing through the rivers are
+  loud. The lake is too deep to cross.
+- If he catches you, you wake on the porch. **Whatever you were carrying is
+  lost** (it goes back where you found it). The woodpile keeps what you stacked.
+
+Finishing Chapter One unlocks **CHAPTER 2** on the title screen.
+
+## Notes
+
 There are **11 notes** to find: a missing-person flyer, a public works
 inspection log, a sheriff's report, and the journals of Dale Ruckert, the
 hunter who shot the white bull in 1987 and put on its head.

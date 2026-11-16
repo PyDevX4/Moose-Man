@@ -208,6 +208,48 @@ CONTROLS_TEXT = [
     "F - flashlight      E - interact (hold to turn valves)      TAB - objective      ESC - pause",
 ]
 
+CH2_WAKE_LINES = [
+    (8.0, "The stove is out. You can see your breath.", 4.0),
+    (11.0, "A snowstorm is coming in tonight.", 4.0),
+    (14.0, "You need firewood. A lot of it.", 4.0),
+]
+
+CH2_ENDING = [
+    [
+        "You stack the last of the wood and pull the door shut.",
+        "",
+        "The stove catches. The cabin fills with orange light.",
+        "",
+        "Outside, the storm arrives all at once.",
+    ],
+    [
+        "Sometime after 3 AM, something heavy walks around the cabin.",
+        "",
+        "It circles it eleven times.",
+        "",
+        "It never touches the door.",
+    ],
+    [
+        "In the morning the snow around the cabin is churned with hoofprints.",
+        "",
+        "And with other tracks. Bigger ones. Coming down from the north.",
+        "",
+        "They are not hooves.",
+        "",
+        "They are hands.",
+    ],
+    [
+        "END OF CHAPTER TWO",
+        "",
+        "",
+        "M O O S E   M A N",
+        "",
+        "CHAPTER THREE  -  coming soon",
+        "",
+        "thank you for playing",
+    ],
+]
+
 ENDING_PAGES = [
     [
         "4:19 AM.  Route 9.",

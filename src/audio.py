@@ -281,11 +281,60 @@ def synth_all():
     tyre = band(noise(n), 180, 1800) * 1.3
     env = 1.0 / (1.0 + ((t - tc) * 1.9) ** 2)
     s['car'] = norm(band((eng * 0.5 + tyre) * env, 40, 5000), 0.95)
+
+    # ================================================================ chapter 2
+    # ---- winter wind: howling resonances sweeping over a low roar
+    n = int(SR * 14)
+    t = np.arange(n) / SR
+    wind = band(noise(n), 30, 300) * slow_mod(n, 0.25, 0.7) * 1.6
+    for fc, rate in ((420, 0.11), (610, 0.07), (880, 0.13)):
+        sweep = fc * (1 + 0.25 * np.sin(2 * np.pi * rate * t + fc))
+        ph = 2 * np.pi * np.cumsum(sweep) / SR
+        howl = np.sin(ph) * band(noise(n), 0, 40) * 6 * slow_mod(n, 0.3, 1.0)
+        wind += howl * 0.25
+    wind += band(noise(n), 2000, 6000) * 0.05 * slow_mod(n, 0.5, 1.0)
+    s['winter_amb'] = loopable(norm(wind, 0.6), 1.5)
+
+    # ---- snow footsteps: a soft compressed crunch
+    for i in range(4):
+        n = int(SR * 0.28)
+        grains = (noise(n) > 0.6) * noise(n)
+        x = band(grains, 500, 4500) * env_ad(n, 0.04, 9) + band(noise(n), 100, 600) * env_ad(n, 0.02, 20) * 0.5
+        s['step_snow%d' % i] = norm(x, 0.5)
+
+    # ---- match: a scratch, then the flare
+    t = tt(1.2)
+    scratch = band(noise(len(t)), 2000, 8000) * (t < 0.16) * slow_mod(len(t), 90, 1.0)
+    flare = band(noise(len(t)), 150, 2500) * np.clip((t - 0.12) / 0.05, 0, 1) * np.exp(-np.maximum(0, t - 0.17) * 3.5)
+    crackle = (noise(len(t)) > 0.992) * noise(len(t)) * np.exp(-t * 2) * (t > 0.15)
+    s['match'] = norm(scratch * 0.9 + flare * 0.6 + band(crackle, 1500, 8000) * 0.8, 0.8)
+
+    # ---- the cabin door: a creak, and (closing) a heavy thud
+    t = tt(1.0)
+    f = 340 + 160 * np.sin(2 * np.pi * 1.3 * t) + 40 * slow_mod(len(t), 8, 1.0)
+    creak = np.sin(2 * np.pi * np.cumsum(f) / SR) * band(noise(len(t)), 0, 30) * 4
+    creak = band(creak, 200, 3000) * np.clip(t / 0.05, 0, 1) * np.clip((1.0 - t) / 0.3, 0, 1)
+    s['door_open'] = norm(echo(creak, 0.07, 0.2, 2), 0.6)
+    t = tt(0.9)
+    thud = np.sin(2 * np.pi * 85 * t) * np.exp(-t * 18) + band(noise(len(t)), 100, 1500) * np.exp(-t * 30) * 0.8
+    s['door_close'] = norm(echo(np.concatenate([creak[:int(SR * 0.35)] * 0.6, thud]), 0.08, 0.25, 2), 0.8)
+
+    # ---- firewood: picked up (a couple of knocks) and stacked (a clatter)
+    def knock(fq, at, total):
+        tk = np.arange(int(SR * total)) / SR
+        o = np.zeros_like(tk)
+        m = tk >= at
+        tt_ = tk[m] - at
+        o[m] = (np.sin(2 * np.pi * fq * tt_) * np.exp(-tt_ * 35) + band(noise(m.sum()), 400, 3000) * np.exp(-tt_ * 60) * 0.6)
+        return o
+    s['wood_pick'] = norm(knock(330, 0.0, 0.5) + knock(410, 0.11, 0.5) * 0.8, 0.7)
+    s['wood_drop'] = norm(knock(300, 0.0, 0.9) + knock(370, 0.09, 0.9) + knock(280, 0.2, 0.9) * 0.8
+                          + knock(450, 0.31, 0.9) * 0.6, 0.8)
     return s
 
 
 class Audio:
-    LOOPS = ('forest_amb', 'sewer_amb', 'breath', 'creak', 'title_amb')
+    LOOPS = ('forest_amb', 'sewer_amb', 'breath', 'creak', 'title_amb', 'winter_amb')
 
     def __init__(self, volume=0.8):
         self.master = volume
