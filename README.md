@@ -74,6 +74,10 @@ snowstorm is coming. Take the lantern and go out for firewood.
   loud. The lake is too deep to cross.
 - If he catches you, you wake on the porch. **Whatever you were carrying is
   lost** (it goes back where you found it). The woodpile keeps what you stacked.
+- With 20 stacked, go inside and take the **rifle** from the rack. Hunt a deer
+  down by the lake: **right mouse** aims through the scope, **left mouse**
+  fires. Your lantern and your running will spook it.
+- Butcher it, then **get back to the cabin**. Something followed you.
 
 Finishing Chapter One unlocks **CHAPTER 2** on the title screen.
 

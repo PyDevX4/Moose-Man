@@ -44,11 +44,10 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "CHAPTER TWO.  One day later.",
-    "You wake in a log cabin. The stove is out. A snowstorm is coming.",
-    "Find 20 bundles of firewood and stack them on the porch.",
-    "The Goat Man is out there in the snow, looking for you.",
-    "Finish Chapter One to unlock it on the title screen.",
+    "Chapter Two continues: after the firewood, take the rifle and hunt a deer.",
+    "Butcher it -- then run. He is back, and he is between you and the cabin.",
+    "The window. The Goat Man. And something white from the north.",
+    "The snow hasn't come yet: just patches on the forest floor.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

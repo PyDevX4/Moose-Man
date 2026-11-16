@@ -21,6 +21,7 @@ import lore
 import updater
 from version import VERSION
 import chapter2 as C2
+from elk import pose_elk, elk_meshes
 
 TITLE = "Moose Man"
 
@@ -263,6 +264,14 @@ class Game:
         self.m_lantern, self.m_lantern_lit, self.m_lantern_off = (Mesh(self.ctx, prog, lb), Mesh(self.ctx, prog, ll),
                                                                    Mesh(self.ctx, prog, lo))
         self.m_door = Mesh(self.ctx, prog, C2.door_mesh())
+        self.m_bars = Mesh(self.ctx, prog, C2.window_bars_mesh())
+        self.m_rifle = Mesh(self.ctx, prog, C2.rifle_mesh())
+        self.m_knife = Mesh(self.ctx, prog, C2.knife_mesh())
+        self.m_meat = Mesh(self.ctx, prog, C2.meat_mesh())
+        for k, v in list(elk_meshes().items()) + list(C2.deer_meshes().items()):
+            self.m_moose[k] = Mesh(self.ctx, prog, v)
+        from moose import unit_cube
+        self.m_moose['shard'] = Mesh(self.ctx, prog, unit_cube(L.GLOW, (0.6, 0.68, 0.75)))
         self.progress = load_progress()
         self.loading_screen("listening for hooves...")
         self.audio = Audio(self.settings['volume'] / 100.0)
@@ -385,6 +394,18 @@ class Game:
         self.goat = None
         self.storm = 0.0
         self.ch2_t = 0.0
+        self.ch2_phase = 'wood'      # wood -> rifle -> hunt -> run
+        self.has_rifle = False
+        self.deer = None
+        self.window_broken = False
+        self.door_angle = 0.0
+        self.w2.door_open = False
+        self.aim = 0.0
+        self.fire_cd = 0.0
+        self.muzzle_t = 0.0
+        self.chaser2 = None
+        self.run_start = None
+        self.has_meat = False
 
     def respawn(self):
         if self.chapter == 2:
@@ -436,7 +457,10 @@ class Game:
             self.running = False
             return
         st = self.state
-        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb'):
+        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs'):
+            return
+        if st == 'play' and self.chapter == 2 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            self.fire_rifle()
             return
         if ev.type in (pygame.WINDOWFOCUSLOST,) and st == 'play':
             self.pause()
@@ -952,14 +976,14 @@ class Game:
             return True
         return False
 
-    def spawn_blood(self, x, y, z, n, vel=(0.0, 2.5, 0.0), spread=1.5, size=(0.025, 0.06)):
-        """A spurt of blood droplets: [x, y, z, vx, vy, vz, size, stuck, pool_lift]."""
+    def spawn_blood(self, x, y, z, n, vel=(0.0, 2.5, 0.0), spread=1.5, size=(0.025, 0.06), key='blood'):
+        """A spurt of droplets (blood, or glass): [x, y, z, vx, vy, vz, size, stuck, pool_lift, mesh]."""
         for _ in range(n):
             self.blood.append([x + random.uniform(-0.08, 0.08), y, z + random.uniform(-0.08, 0.08),
                                vel[0] + random.uniform(-spread, spread),
                                vel[1] + random.uniform(-spread * 0.4, spread),
                                vel[2] + random.uniform(-spread, spread),
-                               random.uniform(*size), False, random.uniform(0, 0.004)])
+                               random.uniform(*size), False, random.uniform(0, 0.004), key])
         if len(self.blood) > 420:
             # keep every pool on the ground; drop the oldest airborne drops first
             self.blood = self.blood[-420:]
@@ -972,8 +996,11 @@ class Game:
             b[0] += b[3] * dt
             b[1] += b[4] * dt
             b[2] += b[5] * dt
-            if b[1] <= 0.04:
-                b[1] = 0.04
+            floor = (self.w2.ground_at(b[0], b[2]) + 0.04) if self.chapter == 2 else 0.04
+            if self.chapter == 2 and abs(b[0]) < C2.CABIN_HX and abs(b[2]) < C2.CABIN_HZ:
+                floor = C2.CABIN_Y + 0.07
+            if b[1] <= floor:
+                b[1] = floor
                 b[7] = True
 
     def update_cutscene(self, dt):
@@ -1434,7 +1461,8 @@ class Game:
     def held_lantern_pos(self, cam, yaw, pitch):
         rx, rz = -math.cos(yaw), math.sin(yaw)
         fx, fz = math.sin(yaw), math.cos(yaw)
-        return (cam[0] + rx * 0.36 + fx * 0.66, cam[1] - 0.66 + 0.18 * math.sin(pitch), cam[2] + rz * 0.36 + fz * 0.66)
+        side = -0.36 if (self.has_rifle and self.state == 'play') else 0.36    # rifle in the right hand, lantern in the left
+        return (cam[0] + rx * side + fx * 0.66, cam[1] - 0.66 + 0.18 * math.sin(pitch), cam[2] + rz * side + fz * 0.66)
 
     def begin_ch2(self):
         """From the porch: gameplay starts."""
@@ -1462,6 +1490,14 @@ class Game:
     def respawn_ch2(self):
         """Back in front of the cabin. Whatever you were carrying is gone -- the
         bundles go back where you found them. The stacked pile is safe."""
+        if self.ch2_phase == 'run':
+            # caught on the way home: back at the deer, meat still in your coat
+            self.red = 0.0
+            self.glitch = 0.0
+            self.msgs = []
+            self.start_run(retry=True)
+            self.message("Again. Don't stop.", 3)
+            return
         for spot in self.wood_carried:
             self.wood_taken.discard(spot)
         lost = self.carried
@@ -1554,13 +1590,35 @@ class Game:
         self.flash_dir = tuple(self.flash_dir[i] + (f[i] - self.flash_dir[i]) * a for i in range(3))
         self.flicker_t = max(0.0, self.flicker_t - dt)
         self.audio.set_listener(p.x, p.z, p.yaw)
-        # the storm builds the longer you are out, and with every bundle stacked
-        self.storm = clamp(self.ch2_t / 900.0 + self.stacked / 30.0, 0.0, 1.0)
+        # the storm is still on its way: the wind picks up as the night goes on
+        self.storm = clamp(self.ch2_t / 1200.0, 0.0, 0.5)
         self.audio.loop('winter_amb', 0.45 + 0.4 * self.storm)
         self.audio.loop('forest_amb', 0.0)
         self.audio.loop('sewer_amb', 0.0)
         self.audio.loop('title_amb', 0.0)
-        self.update_goat(dt)
+        # the door swings
+        target = 1.45 if self.w2.door_open else 0.0
+        self.door_angle += (target - self.door_angle) * min(1.0, dt * 6)
+        # the rifle: right mouse aims down the scope
+        aiming = self.has_rifle and pygame.mouse.get_pressed()[2]
+        self.aim += ((1.0 if aiming else 0.0) - self.aim) * min(1.0, dt * 10)
+        self.fire_cd = max(0.0, self.fire_cd - dt)
+        self.muzzle_t = max(0.0, self.muzzle_t - dt)
+        if getattr(self, 'bolt_t', 0) > 0:
+            self.bolt_t -= dt
+            if self.bolt_t <= 0:
+                self.audio.play('bolt', 0.6)
+        if self.ch2_phase == 'wood':
+            self.update_goat(dt)
+        elif self.ch2_phase == 'hunt' and self.deer is not None:
+            self.deer.update(dt, p, self.flash_on)
+            for ev in self.deer.events:
+                if ev == 'snort':
+                    self.audio.play3d('snort', self.deer.x, self.deer.z, 60, 0.9)
+            self.deer.events = []
+        elif self.ch2_phase == 'run':
+            self.update_run(dt)
+        self.update_blood(dt)
         if self.state != 'play':
             return
         self.focus = self.find_focus_ch2()
@@ -1612,7 +1670,7 @@ class Game:
         best = None
         bestd = -1
         for i, (wx, wy, wz, _) in enumerate(self.w2.wood_spots):
-            if i in self.wood_taken:
+            if i in self.wood_taken or self.ch2_phase != 'wood':
                 continue
             dx, dy, dz = wx - ex, wy + 0.25 - ey, wz - ez
             d = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -1624,16 +1682,30 @@ class Game:
                 best = ('wood', i)
         if best:
             return best
-        wx, wz = C2.WOODPILE
-        d = math.hypot(p.x - wx, p.z - wz)
-        if (self.carried and d < 2.6) or d < 1.4:
-            return ('woodpile', 0)
+        ph = self.ch2_phase
+        if ph == 'wood':
+            wx, wz = C2.WOODPILE
+            d = math.hypot(p.x - wx, p.z - wz)
+            if (self.carried and d < 2.6) or d < 1.4:
+                return ('woodpile', 0)
+            return None
+        hz = C2.CABIN_HZ
+        if ph in ('rifle', 'hunt') and math.hypot(p.x - 0.0, p.z - hz) < 1.9:
+            return ('door', 0)
+        if ph == 'rifle' and not self.has_rifle and math.hypot(p.x - C2.RIFLE_POS[0], p.z - (-hz + 0.3)) < 1.8:
+            return ('rifle', 0)
+        dr = self.deer
+        if ph == 'hunt' and dr is not None and dr.state == 'dead' and math.hypot(p.x - dr.x, p.z - dr.z) < 2.8:
+            return ('deer', 0)
         return None
 
     def interact_ch2(self):
         if not self.focus:
             return
         kind, key = self.focus
+        if kind in ('door', 'rifle', 'deer'):
+            self.interact_more_ch2(kind)
+            return
         if kind == 'wood':
             self.wood_taken.add(key)
             self.wood_carried.append(key)
@@ -1649,10 +1721,447 @@ class Game:
             self.wood_carried = []
             self.audio.play('wood_drop', 0.9)
             if self.stacked >= C2.WOOD_NEEDED:
-                self.finish_ch2()
+                self.start_rifle_phase()
             else:
                 self.message("You stack the wood. (%d/%d)" % (self.stacked, C2.WOOD_NEEDED), 3.5)
                 self.set_objective("Gather firewood before the storm. Stacked %d/%d." % (self.stacked, C2.WOOD_NEEDED))
+
+    def interact_more_ch2(self, kind):
+        """The door, the rifle and the deer (after the firewood is in)."""
+        if kind == 'door':
+            self.w2.door_open = not self.w2.door_open
+            self.audio.play('door_open' if self.w2.door_open else 'door_close', 0.8)
+        elif kind == 'rifle':
+            self.has_rifle = True
+            self.ch2_phase = 'hunt'
+            self.audio.play('bolt', 0.8)
+            self.deer = C2.Deer(self.w2, random.Random())
+            self.message("Your father's .30-06. Four rounds left in the box.", 4)
+            self.set_objective("Hunt a deer. They come down to the lake at night.  [Right mouse] aim  [Left mouse] fire")
+        elif kind == 'deer':
+            self.start_butcher()
+
+    def start_rifle_phase(self):
+        """20/20. The Goat Man moves off; the rifle is inside."""
+        self.ch2_phase = 'rifle'
+        if self.goat is not None:
+            self.audio.play3d('goat_roar', self.goat.x, self.goat.z, 200, 0.6)
+        self.goat = None
+        self.audio.loop('breath', 0)
+        self.fear = 0.0
+        self.message("That's enough wood. Now you need food. The rifle is inside.", 5)
+        self.set_objective("Go into the cabin and get the rifle.  [E] opens the door")
+
+    def fire_rifle(self):
+        if not self.has_rifle or self.fire_cd > 0 or self.state != 'play':
+            return
+        p = self.player
+        self.fire_cd = 1.5
+        self.muzzle_t = 0.07
+        self.audio.play('rifle', 1.0)
+        self.bolt_t = 0.55
+        eye = p.eye()
+        f = p.fwd()
+        p.pitch = clamp(p.pitch + 0.045, -1.45, 1.45)
+        dr = self.deer
+        if dr is None:
+            return
+        hit = dr.hit_test(eye, f)
+        if hit is not None and hit < 140:
+            dr.shot()
+            self.message("Got it.", 2.5)
+            self.set_objective("Go to the deer.")
+            self.spawn_blood(dr.x, dr.y + 1.0, dr.z, 14, vel=(f[0] * 2, 1.5, f[2] * 2), spread=1.2)
+        elif math.hypot(dr.x - p.x, dr.z - p.z) < 130:
+            dr.spook(p.x, p.z)
+            self.message("Missed.", 2)
+
+    # ------------------------------------------------------------------ butchering the deer
+    def start_butcher(self):
+        self.state = 'butcher'
+        self.butcher_t = 0.0
+        self.butcher_fired = set()
+        self.set_mouse(False)
+        self.msgs = []
+
+    def butcher_fire(self, name, at):
+        if self.butcher_t >= at and name not in self.butcher_fired:
+            self.butcher_fired.add(name)
+            return True
+        return False
+
+    def butcher_frame(self):
+        dr = self.deer
+        t = self.butcher_t
+        # kneel at the deer's belly
+        side = (math.cos(dr.yaw), -math.sin(dr.yaw))
+        cam = (dr.x + side[0] * 1.05, dr.y + 0.95 - 0.05 * math.sin(t * 1.3), dr.z + side[1] * 1.05)
+        tgt = (dr.x, dr.y + 0.35, dr.z)
+        f = (tgt[0] - cam[0], tgt[1] - cam[1], tgt[2] - cam[2])
+        ln = math.sqrt(sum(v * v for v in f))
+        fwd = tuple(v / ln for v in f)
+        return cam, fwd, tgt
+
+    def update_butcher(self, dt):
+        self.butcher_t += dt
+        t = self.butcher_t
+        dr = self.deer
+        self.update_blood(dt)
+        self.audio.loop('winter_amb', 0.5)
+        cam, fwd, tgt = self.butcher_frame()
+        if 0.8 < t < 6.0 and int(t / 0.45) != int((t - dt) / 0.45):
+            self.audio.play_rand('eat', 3, 0.7)
+            self.spawn_blood(tgt[0], tgt[1] + 0.1, tgt[2], 4, vel=(0.0, 1.2, 0.0), spread=0.6)
+        if self.butcher_fire('meat', 6.2):
+            self.audio.play('wood_pick', 0.6)
+        if self.butcher_fire('wrap', 7.8):
+            self.has_meat = True
+            self.message("You wrap the meat in your coat.", 3.5)
+        if self.butcher_fire('behind', 9.0):
+            self.audio.play('call_near', 1.0, pan=0.0)
+            self.audio.play('stinger', 0.8)
+            self.message("Something is breathing behind you.", 3)
+        for m in self.msgs:
+            m[1] -= dt
+        self.msgs = [m for m in self.msgs if m[1] > 0]
+        if t > 10.2:
+            self.start_run()
+
+    def render_butcher(self):
+        cam, fwd, tgt = self.butcher_frame()
+        t = self.butcher_t
+        lp = (cam[0] + fwd[0] * 0.4, cam[1] - 0.35, cam[2] + fwd[2] * 0.4)
+        extras = []
+        dr = self.deer
+        # the knife, sawing along the belly
+        if t < 6.2:
+            ax, az = math.sin(dr.yaw), math.cos(dr.yaw)
+            stroke = math.sin(t * 5.0) * 0.18
+            kp = (tgt[0] + ax * stroke, tgt[1] + 0.22 + 0.05 * abs(math.cos(t * 5.0)), tgt[2] + az * stroke)
+            extras.append((self.m_knife, T(*kp) @ RY(dr.yaw) @ RX(0.9)))
+        # the meat, piled by your knee, then gone into your coat
+        if 6.2 <= t < 7.8:
+            for k in range(3):
+                mp = (cam[0] + fwd[0] * 0.55 + (k - 1) * 0.15, tgt[1] + 0.06 + k * 0.05, cam[2] + fwd[2] * 0.55)
+                extras.append((self.m_meat, T(*mp) @ RY(k * 0.7)))
+        parts = [dr.parts()]
+        self.draw_world2(cam, fwd, [(lp, 7.0, self.lantern_col())], parts=parts, extras=extras)
+        y = self.UH - 120
+        for m in reversed(self.msgs):
+            txt, tl, td = m
+            al = int(clamp(tl / 0.8, 0, 1) * clamp((td - tl) / 0.3, 0, 1) * 255)
+            self.blit_text(txt, self.f_msg, (225, 215, 200), (self.UW // 2, y), 'midtop', alpha=al)
+            y -= 30
+        bar = int(self.UH * 0.11)
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, 0, self.UW, bar))
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, self.UH - bar, self.UW, bar))
+
+    # ------------------------------------------------------------------ the run home
+    def start_run(self, retry=False):
+        p = self.player
+        dr = self.deer
+        if not retry:
+            cam, fwd, tgt = self.butcher_frame()
+            yaw_home = math.atan2(0.0 - dr.x, 0.0 - dr.z)
+            self.run_start = (cam[0], cam[2], yaw_home)
+        sx, sz, syaw = self.run_start
+        p.reset(sx, self.w2.ground_at(sx, sz), sz, syaw)
+        # he comes from the far side, behind you as you face home
+        away = syaw + math.pi
+        mx, mz = sx + math.sin(away) * 24, sz + math.cos(away) * 24
+        for _ in range(20):
+            if not self.w2.blocked(mx, mz):
+                break
+            away += 0.4
+            mx, mz = sx + math.sin(away) * 24, sz + math.cos(away) * 24
+        mx = clamp(mx, -C2.HALF + 4, C2.HALF - 4)
+        mz = clamp(mz, -C2.HALF + 4, C2.HALF - 4)
+        self.chaser2 = {'x': mx, 'z': mz, 'y': self.w2.ground_at(mx, mz), 'yaw': math.atan2(sx - mx, sz - mz),
+                        'phase': 0.0, 'amt': 0.0, 'step': 0.0, 'snap': (0.0, 0.0, 0.0), 'snap_t': 0.0}
+        self.ch2_phase = 'run'
+        self.state = 'play'
+        self.flash_on = True
+        self.fear = 0.6
+        self.set_mouse(True)
+        self.set_objective("RUN BACK TO THE CABIN.")
+        self.message("RUN.", 2.5)
+
+    def update_run(self, dt):
+        p = self.player
+        c = self.chaser2
+        dx, dz = p.x - c['x'], p.z - c['z']
+        d = math.hypot(dx, dz)
+        if d > 1e-3:
+            sp = 3.35
+            nx, nz = self.w2.collide(c['x'] + dx / d * sp * dt, c['z'] + dz / d * sp * dt, 0.4, c['x'], c['z'])
+            moved = math.hypot(nx - c['x'], nz - c['z'])
+            c['x'], c['z'] = nx, nz
+            c['yaw'] = Moose._turn(c['yaw'], math.atan2(dx, dz), dt * 6)
+            c['phase'] += moved * 2.1
+            c['amt'] += (min(1.0, moved / max(dt, 1e-4) / 2.0) - c['amt']) * min(1.0, dt * 6)
+            c['step'] += moved
+            if c['step'] > 1.25:
+                c['step'] = 0.0
+                self.audio.play3d('mstep', c['x'], c['z'], 30, 1.0)
+        c['y'] = self.w2.ground_at(c['x'], c['z'])
+        c['snap_t'] -= dt
+        if c['snap_t'] <= 0:
+            c['snap_t'] = random.uniform(0.07, 0.14)
+            c['snap'] = (c['phase'], c['amt'], random.uniform(-0.6, 0.6) if random.random() < 0.4 else 0.0)
+        self.audio.loop3d('breath', c['x'], c['z'], 18, 1.0)
+        self.fear += (clamp(1 - d / 16, 0.35, 1) - self.fear) * min(1.0, dt * 3)
+        self.heart_t -= dt
+        if self.heart_t <= 0:
+            self.heart_t = 1.05 - 0.6 * self.fear
+            self.audio.play('heart', 0.25 + 0.6 * self.fear)
+        if d < 1.05:
+            self.kill()
+            return
+        # made it home
+        if math.hypot(p.x, p.z - C2.CABIN_HZ) < 2.2 or (abs(p.x) < C2.CABIN_HX and abs(p.z) < C2.CABIN_HZ):
+            self.start_window_cs()
+
+    # ------------------------------------------------------------------ the window
+    def start_window_cs(self):
+        self.state = 'windowcs'
+        self.win_t = 0.0
+        self.win_fired = set()
+        self.w2.door_open = False
+        self.door_angle = 0.0
+        self.window_broken = False
+        self.blood = []
+        self.set_mouse(False)
+        self.audio.loop('breath', 0)
+        self.msgs = []
+        self.audio.play('door_close', 1.0)
+
+    def win_fire(self, name, at):
+        if self.win_t >= at and name not in self.win_fired:
+            self.win_fired.add(name)
+            return True
+        return False
+
+    def update_window_cs(self, dt):
+        self.win_t += dt
+        t = self.win_t
+        A = self.audio
+        fr = self.window_frame()
+        A.set_listener(fr['cam'][0], fr['cam'][2], -math.pi / 2)
+        A.loop('winter_amb', 0.55)
+        for i, at in enumerate((0.6, 1.3, 2.0, 2.7, 3.4)):
+            if self.win_fire('hb%d' % i, at):
+                A.play('heart', 0.7)
+        if self.win_fire('face', 4.9):
+            A.play('stinger', 1.0)
+            A.play('breath', 0.8)
+        if self.win_fire('goatroar', 6.0):
+            A.play('goat_roar', 1.0, pan=0.5)
+        if self.win_fire('shove', 6.9):
+            A.play('tackle', 1.0)
+        if self.win_fire('punch', 7.9):
+            A.play('impact', 0.9)
+            g = fr.get('goat_root')
+            if g:
+                self.spawn_blood(g[0], g[1] + 2.4, g[2], 12, vel=(0.0, 1.5, -2.0), spread=1.2)
+        if self.win_fire('mooserun', 8.7):
+            A.play('call_near', 0.8, pan=-0.3)
+        for i in range(5):
+            if self.win_fire('mstep%d' % i, 8.7 + i * 0.3):
+                A.play('mstep', 0.8 - i * 0.14)
+        if self.win_fire('goatroar2', 10.6):
+            A.play('goat_roar', 1.0)
+        if self.win_fire('smash', 11.4):
+            self.window_broken = True
+            A.play('glass', 1.0)
+            for _ in range(3):
+                self.spawn_blood(-C2.CABIN_HX + 0.1, C2.WINDOW_Y, C2.WINDOW_Z, 18, vel=(3.5, 1.0, 0.0), spread=1.4,
+                                 size=(0.02, 0.05), key='shard')
+        if self.win_fire('goatroar3', 12.4):
+            A.play('goat_roar', 1.0)
+        if self.win_fire('elk', 13.7):
+            A.play('elk_bugle', 1.0, pan=0.4)
+        if self.win_fire('bite', 14.4):
+            A.play('impact', 1.0)
+            A.play('goat_roar', 0.8)
+            g = fr.get('goat_root')
+            if g:
+                self.spawn_blood(g[0], g[1] + 2.2, g[2], 30, vel=(0.5, 2.5, 0.0), spread=2.0, size=(0.03, 0.07))
+        for i in range(8):
+            if self.win_fire('estep%d' % i, 16.0 + i * 0.32):
+                A.play('mstep', 0.9 - i * 0.1)
+        if self.win_fire('elk2', 17.2):
+            A.play('elk_bugle', 0.5, pan=-0.6)
+        self.update_blood(dt)
+        self.fade = clamp((t - 20.0) / 1.6, 0, 1)
+        self.fear = 0.85 if 4.5 < t < 18 else 0.3
+        if t > 21.8:
+            self.fade = 0.0
+            self.progress['ch3'] = True
+            save_progress(self.progress)
+            self.ending_pages = lore.CH2_ENDING
+            self.start_ending()
+
+    def window_frame(self):
+        """Everything seen through the window at time t."""
+        t = self.win_t
+        Y = C2.CABIN_Y
+        wx, wy, wz = -C2.CABIN_HX, C2.WINDOW_Y, C2.WINDOW_Z
+
+        def sm(a, b):
+            k = clamp((t - a) / (b - a), 0, 1)
+            return k * k * (3 - 2 * k)
+
+        def lerp(a, b, k):
+            return a + (b - a) * k
+
+        def lerp3(a, b, k):
+            return tuple(a[i] + (b[i] - a[i]) * k for i in range(3))
+
+        out = {'parts': []}
+        # ---- camera: from the door to the window; flinch back when the glass goes; creep back after
+        p0 = (0.1, Y + 1.62, 1.3)
+        p1 = (-1.7, Y + 1.42, wz)
+        cam = lerp3(p0, p1, sm(0.6, 2.8))
+        cam = lerp3(cam, (-0.55, Y + 1.4, wz + 0.15), sm(11.4, 11.8))
+        cam = lerp3(cam, (-1.6, Y + 1.45, wz), sm(18.6, 20.5))
+        look = lerp3((0.1, Y + 1.5, -1.5), (wx - 1.2, wy, wz), sm(0.4, 2.2))
+        if 11.4 < t < 12.0:
+            cam = (cam[0] + random.uniform(-0.03, 0.03), cam[1] + random.uniform(-0.03, 0.03), cam[2])
+        out['cam'] = cam
+        out['look'] = look
+
+        def align(pose_fn, target, yaw, **kw):
+            _, h = pose_fn(0.0, 0.0, 0.0, yaw, **kw)
+            return (target[0] - float(h[0, 3]), target[1] - float(h[1, 3]), target[2] - float(h[2, 3]))
+
+        # ---- the Moose Man at the glass
+        mkw = dict(hunch=0.9, roll=0.0, head_pitch=-0.35, reach=0.35, jaw=0.15, t=self.time)
+        stare = (wx - 0.72, wy + 0.02, wz)
+        R0 = align(lambda x, y, z, yaw, **kw: pose_moose(x, y, z, yaw, 0.0, 0.0, **kw), stare, math.pi / 2, **mkw)
+        if 4.0 <= t < 10.2:
+            if t < 6.7:
+                rise = sm(4.0, 5.4)
+                root = (R0[0], R0[1] - 0.9 * (1 - rise), R0[2])
+                mkw['roll'] = 0.45 * sm(5.6, 6.5)
+                mkw['jaw'] = 0.15 + 0.3 * sm(6.0, 6.6)
+                yaw = math.pi / 2
+            elif t < 8.6:
+                k = sm(6.7, 7.3)
+                root = (R0[0] - 0.4 * k, R0[1], R0[2] + 1.8 * k)
+                yaw = lerp(math.pi / 2, math.pi, sm(6.9, 7.6))
+                mkw['roll'] = 0.45 - 1.0 * k + 0.6 * sm(7.3, 7.8)
+                mkw['reach'] = 0.35 + (1.7 * math.sin(math.pi * clamp((t - 7.6) / 0.5, 0, 1)) if t > 7.6 else 0.0)
+                mkw['jaw'] = 0.6
+            else:
+                k = (t - 8.6) / 1.6
+                root = (R0[0] - 0.4 - 13.0 * k, R0[1], R0[2] + 1.8 + 1.5 * k)
+                yaw = -math.pi / 2 - 0.1
+                mkw.update(hunch=0.75, roll=0.0, reach=0.5)
+                out['parts'].append(pose_moose(root[0], root[1], root[2], yaw, t * 12, 1.0, **mkw)[0])
+                root = None
+            if root is not None:
+                out['parts'].append(pose_moose(root[0], root[1], root[2], yaw, 0.0, 0.0, **mkw)[0])
+        # ---- the Goat Man
+        gkw = dict(hunch=0.95, jaw=0.6, arms=0.1, bloody=True, t=self.time, head_pitch=-0.2)
+        smash_head = (wx - 0.5, wy + 0.05, wz)
+        RG = align(pose_goat, smash_head, math.pi / 2, **gkw)
+        groot = None
+        if 5.9 <= t < 14.4:
+            if t < 6.9:
+                k = sm(5.9, 6.9)
+                groot = (lerp(wx - 4.5, R0[0] - 0.6, k), Y, lerp(wz - 6.5, R0[2] - 0.9, k))
+                gyaw = math.atan2((R0[0] - 0.6) - (wx - 4.5), (R0[2] - 0.9) - (wz - 6.5))
+                g = pose_goat(groot[0], groot[1], groot[2], gyaw, walk_phase=t * 13, walk_amt=1.0, hunch=0.9,
+                              arms=1.0 + 0.3 * sm(6.6, 6.9), bloody=True, t=self.time)
+            elif t < 10.2:
+                hit = sm(7.8, 8.2)
+                base = (R0[0] - 0.6, Y, R0[2] - 0.9 - 0.9 * hit)
+                gyaw = lerp(0.3, -math.pi / 2, sm(8.8, 9.6))
+                groot = base
+                g = pose_goat(base[0], base[1], base[2], gyaw, hunch=0.55, arms=0.4, jaw=0.5 + 0.4 * hit,
+                              roll=0.5 * hit * (1 - sm(8.4, 9.0)), bloody=True, t=self.time)
+            else:
+                k = sm(10.2, 11.2)
+                base0 = (R0[0] - 0.6, Y, R0[2] - 1.8)
+                groot = lerp3(base0, RG, k)
+                push = sm(11.6, 12.4)
+                groot = (groot[0] + 0.4 * push, groot[1], groot[2])
+                gkw2 = dict(gkw)
+                gkw2['arms'] = 0.1 + 1.1 * math.sin(math.pi * clamp((t - 11.1) / 0.5, 0, 1))
+                gkw2['jaw'] = 0.6 + 0.4 * push * abs(math.sin(t * 4))
+                gkw2['roll'] = 0.25 * math.sin(t * 2.3) * push
+                gyaw = lerp(-math.pi / 2, math.pi / 2, k)
+                g = pose_goat(groot[0], groot[1], groot[2], gyaw, **gkw2)
+            out['parts'].append(g[0])
+            out['goat_root'] = groot
+        # ---- the Elk, and the Goat Man in its jaws
+        ekw = dict(head_pitch=0.65, jaw=0.9, split=1.0, t=self.time)
+        if t >= 13.6:
+            gpush = (RG[0] + 0.4, RG[1], RG[2])
+            torso = (gpush[0] - 0.2, gpush[1] + 2.15, gpush[2])
+            # it comes from behind him (the west), facing the cabin, so its body stays outside
+            eyaw0 = math.pi / 2
+            _, eh = pose_elk(0.0, 0.0, 0.0, eyaw0, **ekw)
+            mouth_off = eh @ np.array([0.0, -0.1, 0.8, 1.0])
+            if t < 14.4:
+                k = sm(13.6, 14.4)
+                mouth = lerp3((torso[0] - 2.2, torso[1] + 3.0, torso[2] + 0.4), torso, k)
+                ekw['jaw'] = 0.9
+            elif t < 16.0:
+                k = sm(14.4, 15.8)
+                mouth = lerp3(torso, (torso[0] - 2.0, torso[1] + 1.5, torso[2]), k)
+                ekw['jaw'] = 0.35
+                ekw['split'] = 0.4
+            else:
+                mouth = None
+            if mouth is not None:
+                eroot = (mouth[0] - mouth_off[0], mouth[1] - mouth_off[1], mouth[2] - mouth_off[2])
+                out['parts'].append(pose_elk(eroot[0], eroot[1], eroot[2], eyaw0, **ekw)[0])
+            else:
+                # turning, and running off into the trees with him
+                k = (t - 16.0) / 2.5
+                ekw.update(head_pitch=0.35, jaw=0.35, split=0.4)
+                last = (torso[0] - 2.0, torso[1] + 1.5, torso[2])
+                base = (last[0] - mouth_off[0], last[1] - mouth_off[1], last[2] - mouth_off[2])
+                eyaw = lerp(eyaw0, -math.pi / 2 + 0.3, sm(16.0, 16.7))
+                eroot = (base[0] - 16.0 * k, base[1] - 0.6 * sm(16.0, 16.6), base[2])
+                parts, eh2 = pose_elk(eroot[0], eroot[1], eroot[2], eyaw, phase=t * 6, amt=1.0, **ekw)
+                out['parts'].append(parts)
+                m2 = eh2 @ np.array([0.0, -0.1, 0.8, 1.0])
+                mouth = (float(m2[0]), float(m2[1]), float(m2[2]))
+            if t >= 14.4 and mouth is not None and t < 19.0:
+                # the Goat Man hangs from its jaws, kicking
+                gr = (mouth[0] + 0.2, mouth[1] - 2.15, mouth[2])
+                kick = 1.0 if t < 16.5 else 0.5
+                out['parts'].append(pose_goat(gr[0], gr[1], gr[2], -math.pi / 2 + 0.4, walk_phase=t * 18, walk_amt=kick,
+                                              hunch=0.4, arms=0.8 + 0.6 * math.sin(t * 9), jaw=1.0, tilt=0.35,
+                                              roll=0.4 * math.sin(t * 7), bloody=True, t=self.time)[0])
+                out['goat_root'] = gr
+        return out
+
+    def render_window_cs(self):
+        fr = self.window_frame()
+        cam, look = fr['cam'], fr['look']
+        f = (look[0] - cam[0], look[1] - cam[1], look[2] - cam[2])
+        ln = math.sqrt(sum(v * v for v in f))
+        fwd = tuple(v / ln for v in f)
+        yaw = math.atan2(fwd[0], fwd[2])
+        lp = self.held_lantern_pos(cam, yaw, 0.0)
+        wx = -C2.CABIN_HX
+        lights = [((lp[0], lp[1] + 0.2, lp[2]), 10.0, self.lantern_col()),
+                  # cold moonlight outside the window, so the shapes out there read
+                  ((wx - 1.6, C2.WINDOW_Y + 1.8, C2.WINDOW_Z), 7.5, (0.35, 0.42, 0.62)),
+                  ((wx - 4.0, C2.WINDOW_Y + 3.5, C2.WINDOW_Z), 10.0, (0.2, 0.24, 0.36))]
+        self.draw_world2(cam, fwd, lights, parts=fr['parts'], hold=(True, yaw, 0.0), fov=56)
+        bar = int(self.UH * 0.11)
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, 0, self.UW, bar))
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, self.UH - bar, self.UW, bar))
+
+    def chaser2_parts(self):
+        c = self.chaser2
+        ph, amt, roll = c['snap']
+        return pose_moose(c['x'], c['y'], c['z'], c['yaw'], ph, amt, hunch=0.75, roll=roll, reach=0.7,
+                          jaw=0.45, t=self.time)[0]
 
     def finish_ch2(self):
         self.progress['ch3'] = True
@@ -1674,8 +2183,8 @@ class Game:
             self.fade = 0.0
             self.start_ending()
 
-    def draw_world2(self, cam, fwd, lights, door=0.0, lantern_at=None, lantern_lit=True, hold=None, parts=(),
-                    up=(0.0, 1.0, 0.0), fov=None):
+    def draw_world2(self, cam, fwd, lights, door=None, lantern_at=None, lantern_lit=True, hold=None, parts=(),
+                    up=(0.0, 1.0, 0.0), fov=None, extras=()):
         """Render the Chapter 2 map."""
         r = self.r
         w2 = self.w2
@@ -1693,7 +2202,15 @@ class Game:
         r.draw(self.m_ch2)
         r.draw(self.m_water2)
         Y = C2.CABIN_Y
+        if door is None:
+            door = self.door_angle
         r.draw(self.m_door, model=T(C2.DOOR_HINGE_X, Y + 0.05, C2.CABIN_HZ) @ RY(door))
+        if not self.window_broken:
+            r.draw(self.m_bars)
+        if not self.has_rifle:
+            r.draw(self.m_rifle, model=T(C2.RIFLE_POS[0], C2.RIFLE_POS[1], -C2.CABIN_HZ + 0.24) @ RY(math.pi / 2) @ RZ(0.05))
+        for mesh, M in extras:
+            r.draw(mesh, model=M)
         for i, (wx, wy, wz, rot) in enumerate(w2.wood_spots):
             if i not in self.wood_taken:
                 r.draw(self.m_wood, model=T(wx, wy, wz) @ RY(rot))
@@ -1714,20 +2231,15 @@ class Game:
         for pl in parts:
             for key, M in pl:
                 r.draw(self.m_moose[key], model=M)
-        # falling snow around the camera, drifting with the wind
-        t = self.time
-        layers = 1 if storm < 0.45 else 2
-        for layer in range(layers):
-            drift_x = t * (1.0 + 1.6 * storm) + layer * 13.7
-            drift_z = t * 0.35 + layer * 7.1
-            ox0 = drift_x + 30 * math.floor((cam[0] - 15 - drift_x) / 30)
-            oz0 = drift_z + 30 * math.floor((cam[2] - 15 - drift_z) / 30)
-            fall = (t * (1.3 + 0.8 * storm) + layer * 5.0) % 12
-            oy0 = cam[1] - 6 - fall
-            for ox in (ox0, ox0 + 30):
-                for oz in (oz0, oz0 + 30):
-                    for oy in (oy0, oy0 + 12):
-                        r.draw(self.m_snow, model=T(ox, oy, oz))
+        # blood and glass
+        for b in self.blood:
+            key = b[9] if len(b) > 9 else 'blood'
+            if b[7]:
+                s = b[6] * 2.4
+                r.draw(self.m_moose[key], model=T(b[0], b[1] - 0.005 + b[8], b[2]) @ S(s, 0.006, s * 0.8))
+            else:
+                s = b[6]
+                r.draw(self.m_moose[key], model=T(b[0], b[1], b[2]) @ S(s, s * 1.6, s))
 
     def render_ch2_scene(self):
         p = self.player
@@ -1743,7 +2255,32 @@ class Game:
         if gt is not None:
             ph, amt, roll = gt.snap
             parts.append(C2_goat_parts(gt.x, gt.y, gt.z, gt.yaw, ph, amt, roll, gt.state == 'chase', self.time))
-        self.draw_world2(cam, fwd, lights, lantern_lit=lit, hold=(True, p.yaw, p.pitch), parts=parts)
+        if self.deer is not None and self.ch2_phase == 'hunt':
+            parts.append(self.deer.parts())
+        if self.chaser2 is not None and self.ch2_phase == 'run':
+            parts.append(self.chaser2_parts())
+        extras = []
+        fov = None
+        if self.has_rifle:
+            # the rifle: at the hip, or up at the eye looking down the scope
+            yaw, pitch = p.yaw, p.pitch
+            right = (-math.cos(yaw), 0.0, math.sin(yaw))
+            upv = (right[1] * fwd[2] - right[2] * fwd[1], right[2] * fwd[0] - right[0] * fwd[2],
+                   right[0] * fwd[1] - right[1] * fwd[0])
+            hip = tuple(cam[i] + right[i] * 0.2 + fwd[i] * 0.42 - upv[i] * 0.24 for i in range(3))
+            eye = tuple(cam[i] + fwd[i] * 0.3 - upv[i] * 0.075 for i in range(3))
+            a = self.aim
+            pos = tuple(hip[i] + (eye[i] - hip[i]) * a for i in range(3))
+            kick = 0.08 * (self.fire_cd / 1.5) ** 6
+            M = T(*pos) @ RY(yaw) @ RX(-pitch - kick)
+            extras.append((self.m_rifle, M))
+            fov = self.settings['fov'] + (26 - self.settings['fov']) * a
+            if self.muzzle_t > 0:
+                mp = tuple(pos[i] + fwd[i] * 0.85 for i in range(3))
+                lights.insert(0, (mp, 8.0, (2.5, 1.8, 0.9)))
+                extras.append((self.m_moose['eye'], T(*mp) @ S(0.12)))
+        self.draw_world2(cam, fwd, lights, lantern_lit=lit, hold=(True, p.yaw, p.pitch), parts=parts, extras=extras,
+                         fov=fov)
 
     def goat_face_parts(self, cam, yaw, dist):
         roll = random.uniform(-0.25, 0.25)
@@ -1792,6 +2329,10 @@ class Game:
             self.update_wake(dt)
         elif st == 'ch2_end':
             self.update_ch2_end(dt)
+        elif st == 'butcher':
+            self.update_butcher(dt)
+        elif st == 'windowcs':
+            self.update_window_cs(dt)
         elif st == 'scare':
             self.scare_t += dt
             if self.scare_t > 1.7:
@@ -2305,6 +2846,13 @@ class Game:
             self.render_ch2_scene()
             self.draw_hud(minimal=True)
             post = self.post_params()
+        elif st == 'butcher':
+            self.render_butcher()
+            post = self.post_params({'fear': 0.15})
+        elif st == 'windowcs':
+            self.render_window_cs()
+            t = self.win_t
+            post = self.post_params({'glitch': 0.8 if 11.4 <= t < 11.7 or 14.4 <= t < 14.6 else 0.0})
         elif st == 'ending':
             self.r.fbo.use()
             self.r.fbo.clear(0, 0, 0, 1)
@@ -2390,6 +2938,11 @@ class Game:
         cam = (cam[0] + random.uniform(-sh, sh), cam[1] + random.uniform(-sh, sh), cam[2])
         yaw = p.yaw + random.uniform(-0.03, 0.03)
         fwd = (math.sin(yaw), 0.0, math.cos(yaw))
+        if self.chapter == 2 and self.ch2_phase == 'run':
+            parts = [self.face_parts(cam, fwd, yaw, 1.75 - min(k, 1.0) * 0.45)]
+            lp = (cam[0] + math.sin(yaw) * 0.4, cam[1] - 0.35, cam[2] + math.cos(yaw) * 0.4)
+            self.draw_world2(cam, fwd, [(lp, 6.0, (1.5, 0.9, 0.45))], parts=parts)
+            return
         if self.chapter == 2:
             # the Goat Man fills the screen, lit by your lantern
             parts = [self.goat_face_parts(cam, yaw, 2.0 - min(k, 1.0) * 0.55)]
@@ -2569,6 +3122,12 @@ class Game:
                 label = "[E] Read"
             elif kind == 'wood':
                 label = "[E] Pick up firewood"
+            elif kind == 'door':
+                label = "[E] Close the door" if self.w2.door_open else "[E] Open the door"
+            elif kind == 'rifle':
+                label = "[E] Take the rifle"
+            elif kind == 'deer':
+                label = "[E] Butcher the deer"
             elif kind == 'woodpile':
                 label = ("[E] Stack your firewood (%d)" % self.carried) if self.carried else "The woodpile"
             elif kind == 'valve':
@@ -2594,9 +3153,28 @@ class Game:
             self.blit_text(txt, self.f_msg, (225, 215, 200), (cx, y), 'midtop', alpha=a)
             y -= 30
         if self.chapter == 2:
-            # firewood is always on screen in Chapter 2
-            self.blit_text("FIREWOOD  stacked %d/%d   carrying %d" % (self.stacked, C2.WOOD_NEEDED, self.carried),
-                           self.f_small, (215, 205, 190), (26, 56))
+            if self.has_rifle and self.aim > 0.55:
+                # looking down the scope: everything but the circle goes black
+                sc = pygame.Surface((self.UW, self.UH), pygame.SRCALPHA)
+                sc.fill((0, 0, 0, int(255 * min(1.0, (self.aim - 0.55) / 0.3))))
+                rad = int(self.UH * 0.42)
+                pygame.draw.circle(sc, (0, 0, 0, 0), (cx, cy), rad)
+                pygame.draw.line(sc, (10, 10, 10, 230), (cx - rad, cy), (cx + rad, cy), 1)
+                pygame.draw.line(sc, (10, 10, 10, 230), (cx, cy - rad), (cx, cy + rad), 1)
+                pygame.draw.line(sc, (10, 10, 10, 255), (cx - rad, cy), (cx - 30, cy), 3)
+                pygame.draw.line(sc, (10, 10, 10, 255), (cx + 30, cy), (cx + rad, cy), 3)
+                pygame.draw.line(sc, (10, 10, 10, 255), (cx, cy + 30), (cx, cy + rad), 3)
+                self.ui.blit(sc, (0, 0))
+            # what you are doing, always on screen in Chapter 2
+            if self.ch2_phase == 'wood':
+                status = "FIREWOOD  stacked %d/%d   carrying %d" % (self.stacked, C2.WOOD_NEEDED, self.carried)
+            elif self.ch2_phase == 'rifle':
+                status = "FIREWOOD  stacked %d/%d   -   get the rifle" % (self.stacked, C2.WOOD_NEEDED)
+            elif self.ch2_phase == 'hunt':
+                status = "RIFLE   [right mouse] aim   [left mouse] fire"
+            else:
+                status = "GET BACK TO THE CABIN"
+            self.blit_text(status, self.f_small, (215, 205, 190), (26, 56))
             if self.obj_t > 0:
                 a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
                 self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)
@@ -2643,7 +3221,9 @@ class Game:
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 2:
+        if self.chapter == 2 and self.ch2_phase == 'run':
+            title, sub = "HE CAME BACK FOR YOU", "the cabin was right there."
+        elif self.chapter == 2:
             title, sub = "HE WAS STILL HUNGRY", "whatever you were carrying is gone."
         else:
             title, sub = "YOU STOPPED MOVING", "the herd has room for one more."

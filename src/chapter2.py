@@ -68,6 +68,9 @@ def terrain_h2(x, z):
 
 
 CABIN_Y = float(terrain_h2(0.0, 0.0))
+WINDOW_Z = -0.2                          # the window in the left (west) wall
+WINDOW_Y = CABIN_Y + 1.36
+RIFLE_POS = (-0.7, CABIN_Y + 1.55)       # x, y on the back wall rack
 
 
 class World2:
@@ -78,6 +81,8 @@ class World2:
         self.wood_spots = []            # (x, y, z, rot)
         self.lights = []
         self.porch_lamp = None
+        self.door_box = None
+        self.door_open = False
 
     # ------------------------------------------------------------------ queries
     def ground_at(self, x, z):
@@ -98,8 +103,9 @@ class World2:
                 x = ox
             else:
                 x, z = ox, oz
+        boxes = self.boxes if (self.door_open or self.door_box is None) else self.boxes + [self.door_box]
         for _ in range(2):
-            for bx0, bz0, bx1, bz1 in self.boxes:
+            for bx0, bz0, bx1, bz1 in boxes:
                 nx = clamp(x, bx0, bx1)
                 nz = clamp(z, bz0, bz1)
                 dx, dz = x - nx, z - nz
@@ -215,7 +221,8 @@ class World2:
             sz = rng.uniform(0.5, 1.6)
             m = T(x, h, z) @ RY(rng.random() * 6) @ RX(rng.uniform(-0.25, 0.25))
             b.box((0, sz * 0.25, 0), (sz * 1.3, sz * 0.8, sz), L.CONCRETE, (0.55, 0.56, 0.6), m=m)
-            b.box((0, sz * 0.66, 0), (sz * 1.2, 0.06, sz * 0.9), L.CONCRETE, (2.05, 2.1, 2.3), m=m)
+            if rng.random() < 0.3:
+                b.box((0, sz * 0.66, 0), (sz * 0.7, 0.05, sz * 0.5), L.CONCRETE, (1.9, 1.95, 2.15), m=m)
             if sz > 1.0:
                 self.add_tree(x, z, sz * 0.6)
         for _ in range(45):
@@ -227,9 +234,26 @@ class World2:
             ln = rng.uniform(3, 6)
             m = T(x, h + 0.2, z) @ RY(a) @ RX(math.pi / 2) @ T(0, -ln / 2, 0)
             b.cylinder(0.24, 0.21, ln, 7, L.BARK, (0.7, 0.68, 0.66), m=m)
-            b.box((0, ln / 2, 0.2), (0.3, ln, 0.04), L.CONCRETE, (2.05, 2.1, 2.3), m=m)
             for k in range(-2, 3):
                 self.add_tree(x + math.sin(a) * k * ln / 5, z + math.cos(a) * k * ln / 5, 0.3)
+        # not a blanket of snow yet -- just patches and drifts left from the last fall
+        for _ in range(260):
+            x, z = self.random_land(rng, margin=4, min_h=0.35)
+            if math.hypot(x, z) < 4.5:
+                continue
+            h = float(terrain_h2(x, z))
+            r = rng.uniform(0.5, 2.6)
+            b.cylinder(r, r * 0.8, 0.07, 9, L.CONCRETE, (1.9, 1.95, 2.15), m=T(x, h - 0.03, z) @ RY(rng.random() * 6) @ S(1.0, 1.0, rng.uniform(0.5, 1.0)), cap=True)
+        for (tx, tz, tr) in self.trees[::9]:
+            if tr > 0.5:
+                continue
+            a = rng.random() * 6.28
+            px, pz = tx + math.cos(a) * (tr + 0.5), tz + math.sin(a) * (tr + 0.5)
+            h = float(terrain_h2(px, pz))
+            if h < WL + 0.3:
+                continue
+            r = rng.uniform(0.5, 1.1)
+            b.cylinder(r, r * 0.25, rng.uniform(0.3, 0.6), 8, L.CONCRETE, (1.9, 1.95, 2.15), m=T(px, h - 0.05, pz), cap=True)
         self._cabin(b)
         self._landmarks(b, rng)
         self.static_data = b.array()
@@ -248,16 +272,16 @@ class World2:
         gz = np.gradient(H, 2.0, axis=0)
         N = np.stack([-gx, np.ones_like(H), -gz], -1)
         N /= np.linalg.norm(N, axis=-1, keepdims=True)
-        snow = np.array((2.0, 2.06, 2.25))
+        floor = np.array((0.95, 0.95, 1.0))          # cold, frosted forest floor
         mud = np.array((0.55, 0.5, 0.45))
         t = np.clip((H - (WL + 0.05)) / 0.5, 0, 1)[..., None]
-        col = mud * (1 - t) + snow * t
+        col = mud * (1 - t) + floor * t
         V = np.zeros(H.shape + (12,), np.float32)
         V[..., 0], V[..., 1], V[..., 2] = X, H, Z
         V[..., 3:6] = N
         V[..., 6], V[..., 7] = X * 0.25, Z * 0.25
         V[..., 8:11] = col
-        V[..., 11] = L.CONCRETE      # grey-white noise reads as snow far better than tinted grass
+        V[..., 11] = L.GRASS
         nz, nx = H.shape
         j, i = np.mgrid[0:nz - 1, 0:nx - 1]
         tris = np.stack([V[j, i], V[j, i + 1], V[j + 1, i + 1], V[j, i], V[j + 1, i + 1], V[j + 1, i]], axis=2)
@@ -270,10 +294,7 @@ class World2:
             y = ht * (0.32 + 0.22 * k)
             rad = (2.7 - 0.7 * k) * rng.uniform(0.85, 1.12)
             ch = 3.6 - 0.5 * k
-            b.cylinder(rad, 0.0, ch, 7, L.NEEDLES, (1.25, 1.35, 1.45), m=T(x, h + y, z) @ RY(rng.random() * 6.28))
-            # snow sitting on the boughs
-            b.cylinder(rad * 0.82, 0.0, ch * 0.55, 7, L.CONCRETE, (1.9, 1.95, 2.15),
-                       m=T(x, h + y + ch * 0.38, z) @ RY(rng.random() * 6.28))
+            b.cylinder(rad, 0.0, ch, 7, L.NEEDLES, (1.0, 1.05, 1.05), m=T(x, h + y, z) @ RY(rng.random() * 6.28))
 
     def _dead_tree(self, b, x, h, z, r, ht, rng):
         b.cylinder(r, r * 0.25, ht, 6, L.BARK, (0.75, 0.75, 0.78), m=T(x, h - 0.2, z))
@@ -306,7 +327,12 @@ class World2:
             y = Y + r + i * 0.3
             # back wall and the two side walls
             self._log(b, (-hx - 0.25, y, -hz), (hx + 0.25, y, -hz), r)
-            self._log(b, (-hx, y + 0.15, -hz - 0.25), (-hx, y + 0.15, hz + 0.25), r)
+            if i in (3, 4):
+                # the window: a real opening in the left wall
+                self._log(b, (-hx, y + 0.15, -hz - 0.25), (-hx, y + 0.15, WINDOW_Z - 0.42), r)
+                self._log(b, (-hx, y + 0.15, WINDOW_Z + 0.42), (-hx, y + 0.15, hz + 0.25), r)
+            else:
+                self._log(b, (-hx, y + 0.15, -hz - 0.25), (-hx, y + 0.15, hz + 0.25), r)
             self._log(b, (hx, y + 0.15, -hz - 0.25), (hx, y + 0.15, hz + 0.25), r)
             # front wall, split around the door below the lintel
             if y < Y + 2.05:
@@ -321,18 +347,17 @@ class World2:
             e = (hz + 0.55) * s
             b.quad((-hx - 0.45, top - 0.05, e), (hx + 0.45, top - 0.05, e), (hx + 0.45, ridge, 0.0), (-hx - 0.45, ridge, 0.0),
                    L.WOOD, (0.55, 0.5, 0.48))
-            b.quad((-hx - 0.45, top + 0.06, e), (hx + 0.45, top + 0.06, e), (hx + 0.45, ridge + 0.11, 0.0),
-                   (-hx - 0.45, ridge + 0.11, 0.0), L.CONCRETE, (2.05, 2.1, 2.3))
         for sx in (-hx, hx):
             b.quad((sx, top - 0.1, -hz - 0.2), (sx, top - 0.1, hz + 0.2), (sx, ridge - 0.05, 0.0), (sx, ridge - 0.05, 0.0),
                    L.WOOD, (0.6, 0.5, 0.42))
         # interior floor and ceiling boards
         b.quad((-hx, Y + 0.04, -hz), (hx, Y + 0.04, -hz), (hx, Y + 0.04, hz), (-hx, Y + 0.04, hz), L.WOOD, (0.7, 0.6, 0.5))
-        # window on the left wall (glass panes both sides)
-        for off in (-0.17, 0.17):
-            b.facing_quad((-hx + off, Y + 1.35, -0.2), (1 if off > 0 else -1, 0, 0), 0.7, 0.55, L.METAL, (0.25, 0.3, 0.42))
-        b.box((-hx, Y + 1.35, -0.2), (0.38, 0.04, 0.75), L.WOOD)
-        b.box((-hx, Y + 1.35, -0.2), (0.38, 0.6, 0.04), L.WOOD)
+        # window frame (sill and head); the cross bars are drawn separately so they can break
+        b.box((-hx, WINDOW_Y - 0.32, WINDOW_Z), (0.42, 0.06, 0.92), L.WOOD, (0.7, 0.6, 0.5))
+        b.box((-hx, WINDOW_Y + 0.31, WINDOW_Z), (0.36, 0.05, 0.9), L.WOOD, (0.7, 0.6, 0.5))
+        # the rifle rack on the back wall
+        for ox in (-0.45, 0.45):
+            b.box((RIFLE_POS[0] + ox, RIFLE_POS[1] - 0.06, -hz + 0.22), (0.06, 0.1, 0.12), L.WOOD, (0.5, 0.4, 0.3))
         # stove and chimney pipe
         sx, sz = 0.6, -1.5
         b.box((sx, Y + 0.45, sz), (0.7, 0.75, 0.6), L.METAL, (0.35, 0.33, 0.33))
@@ -364,14 +389,12 @@ class World2:
         b.facing_quad((0.2, Y + 1.6, -hz + 0.18), (0, 0, 1), 0.4, 0.5, L.PAPER)
         # porch deck, steps, posts and the hanging lamp
         b.box((0.0, Y + 0.08, hz + 0.95), (2 * hx + 0.4, 0.14, 1.6), L.WOOD, (0.75, 0.65, 0.55))
-        b.box((0.0, Y + 0.16, hz + 0.25), (2 * hx + 0.3, 0.02, 0.3), L.CONCRETE, (1.9, 1.95, 2.15))
+        b.cylinder(0.5, 0.15, 0.35, 8, L.CONCRETE, (1.9, 1.95, 2.15), m=T(-hx - 0.2, Y + 0.0, hz + 1.9), cap=True)
         for px in (-hx, hx):
             b.box((px, Y + 1.25, hz + 1.65), (0.16, 2.5, 0.16), L.BARK, (0.8, 0.65, 0.5))
         b.box((0.0, Y + 2.5, hz + 1.65), (2 * hx + 0.3, 0.16, 0.16), L.BARK, (0.8, 0.65, 0.5))
         b.quad((-hx - 0.4, Y + 2.62, hz + 1.8), (hx + 0.4, Y + 2.62, hz + 1.8), (hx + 0.4, top + 0.05, hz + 0.55),
                (-hx - 0.4, top + 0.05, hz + 0.55), L.WOOD, (0.55, 0.5, 0.48))
-        b.quad((-hx - 0.4, Y + 2.72, hz + 1.8), (hx + 0.4, Y + 2.72, hz + 1.8), (hx + 0.4, top + 0.15, hz + 0.55),
-               (-hx - 0.4, top + 0.15, hz + 0.55), L.CONCRETE, (2.05, 2.1, 2.3))
         lx, lz = -hx + 0.3, hz + 1.65
         b.box((lx, Y + 2.25, lz), (0.02, 0.35, 0.02), L.BLACK)
         b.box((lx, Y + 1.98, lz), (0.16, 0.2, 0.16), L.GLOW + EMIS, (1.0, 0.7, 0.35))
@@ -379,10 +402,20 @@ class World2:
         b.box((lx, Y + 1.87, lz), (0.2, 0.04, 0.2), L.METAL)
         self.porch_lamp = (lx, Y + 1.98, lz)
         self.lights.append({'pos': (lx, Y + 1.9, lz), 'rad': 13.0, 'col': (0.95, 0.6, 0.28), 'flicker': 'fire'})
-        # solid walls
-        self.boxes.append((-hx - 0.25, -hz - 0.25, hx + 0.25, hz + 0.25))
+        # walls you can walk between: back, both sides, the front either side of the door
+        w = 0.2
+        self.boxes += [
+            (-hx - 0.3, -hz - w, hx + 0.3, -hz + w),
+            (-hx - w, -hz - 0.3, -hx + w, hz + 0.3),
+            (hx - w, -hz - 0.3, hx + w, hz + 0.3),
+            (-hx - 0.3, hz - w, DOOR_HINGE_X, hz + w),
+            (0.55, hz - w, hx + 0.3, hz + w),
+            # stove, table, cot
+            (0.22, -1.85, 0.98, -1.17), (1.08, -1.68, 2.12, -0.92), (-2.25, -1.82, -1.45, 0.1),
+        ]
         for px in (-hx, hx):
             self.boxes.append((px - 0.12, hz + 1.53, px + 0.12, hz + 1.77))
+        self.door_box = (DOOR_HINGE_X, hz - w, 0.55, hz + w)
 
     def _landmarks(self, b, rng):
         # a dock out onto the lake
@@ -391,7 +424,6 @@ class World2:
         ang = math.atan2(LAKE[0] - dx, LAKE[1] - dz)
         m = T(dx, max(h, WL) + 0.35, dz) @ RY(ang)
         b.box((0, 0, 4.0), (1.8, 0.1, 9.0), L.WOOD, (0.6, 0.55, 0.5), m=m)
-        b.box((0, 0.07, 4.0), (1.7, 0.03, 8.8), L.CONCRETE, (1.9, 1.95, 2.15), m=m)
         for k in range(5):
             for s in (-1, 1):
                 b.box((s * 0.85, -1.0, k * 2.0 + 0.3), (0.14, 2.2, 0.14), L.BARK, m=m)
@@ -411,7 +443,7 @@ class World2:
         ox, oz = OUTHOUSE
         h = float(terrain_h2(ox, oz))
         b.box((ox, h + 1.1, oz), (1.2, 2.2, 1.2), L.WOOD, (0.65, 0.55, 0.45))
-        b.box((ox, h + 2.28, oz), (1.4, 0.12, 1.4), L.CONCRETE, (2.05, 2.1, 2.3))
+        b.box((ox, h + 2.28, oz), (1.4, 0.12, 1.4), L.WOOD, (0.5, 0.45, 0.4))
         b.box((ox + 0.2, h + 1.6, oz + 0.61), (0.12, 0.12, 0.02), L.BLACK)
         self.boxes.append((ox - 0.65, oz - 0.65, ox + 0.65, oz + 0.65))
 
@@ -419,11 +451,227 @@ class World2:
 # ---------------------------------------------------------------------- small meshes
 def wood_bundle_mesh():
     b = MeshBuilder()
+    # pale birch, so a bundle stands out on the dark forest floor
     for i, (ox, oy) in enumerate(((-0.11, 0.1), (0.11, 0.1), (0.0, 0.28))):
-        b.cylinder(0.1, 0.095, 0.85, 7, L.BARK, (0.95, 0.75, 0.55), m=T(ox, oy, -0.42) @ RX(math.pi / 2), cap=True)
-    b.box((0, 0.39, 0), (0.25, 0.04, 0.7), L.CONCRETE, (2.05, 2.1, 2.3))
+        b.cylinder(0.1, 0.095, 0.85, 7, L.BARK, (2.3, 2.2, 2.0), m=T(ox, oy, -0.42) @ RX(math.pi / 2), cap=True)
     b.box((0, 0.2, 0.0), (0.36, 0.03, 0.04), L.CLOTH, (0.6, 0.4, 0.3))   # twine
     return b.array()
+
+
+def window_bars_mesh():
+    """The window's cross bars and thin glass panes -- drawn until they are smashed."""
+    b = MeshBuilder()
+    x = -CABIN_HX
+    b.box((x, WINDOW_Y, WINDOW_Z), (0.08, 0.6, 0.05), L.WOOD, (0.7, 0.6, 0.5))
+    b.box((x, WINDOW_Y, WINDOW_Z), (0.08, 0.05, 0.84), L.WOOD, (0.7, 0.6, 0.5))
+    # grimy glass: a dithered pattern so it reads as dirty glass but you can see through it
+    for dz in (-0.21, 0.21):
+        for dy in (-0.15, 0.15):
+            b.facing_quad((x + 0.005, WINDOW_Y + dy, WINDOW_Z + dz), (1, 0, 0), 0.4, 0.28, L.GRATE, (0.35, 0.4, 0.45),
+                          uv=((0, 0), (3, 0), (3, 2), (0, 2)))
+    return b.array()
+
+
+def rifle_mesh():
+    """A bolt-action hunting rifle with a scope, pointing down local +z."""
+    b = MeshBuilder()
+    wood, steel = (0.75, 0.5, 0.32), (0.32, 0.32, 0.35)
+    b.box((0, -0.04, -0.22), (0.055, 0.1, 0.42), L.WOOD, wood)               # stock
+    b.box((0, -0.09, -0.4), (0.05, 0.13, 0.12), L.WOOD, wood)                # butt
+    b.box((0, -0.02, 0.15), (0.05, 0.06, 0.4), L.WOOD, wood)                 # forend
+    b.cylinder(0.014, 0.012, 0.75, 6, L.METAL, steel, m=T(0, 0.012, 0.0) @ RX(math.pi / 2))   # barrel
+    b.box((0, 0.02, -0.02), (0.045, 0.05, 0.2), L.METAL, steel)              # receiver
+    b.box((0.04, 0.03, -0.05), (0.05, 0.012, 0.012), L.METAL, steel)         # bolt handle
+    b.cylinder(0.022, 0.022, 0.3, 8, L.BLACK, m=T(0, 0.075, -0.15) @ RX(math.pi / 2), cap=True)   # scope
+    b.box((0, 0.05, -0.02), (0.02, 0.03, 0.02), L.BLACK)
+    b.box((0, 0.05, 0.1), (0.02, 0.03, 0.02), L.BLACK)
+    return b.array()
+
+
+def knife_mesh():
+    b = MeshBuilder()
+    b.box((0, 0, -0.06), (0.025, 0.03, 0.11), L.WOOD, (0.5, 0.35, 0.25))
+    b.box((0, 0.005, 0.07), (0.006, 0.03, 0.16), L.METAL, (1.2, 1.2, 1.25))
+    return b.array()
+
+
+def meat_mesh():
+    b = MeshBuilder()
+    b.box((0, 0, 0), (0.26, 0.09, 0.18), L.SKIN, (0.62, 0.12, 0.1))
+    b.box((0.03, 0.05, 0.02), (0.2, 0.03, 0.12), L.SKIN, (0.85, 0.75, 0.65))   # fat
+    return b.array()
+
+
+def deer_meshes():
+    from moose import unit_cube
+    return {
+        'deer': unit_cube(L.FUR, (3.2, 2.3, 1.55)),
+        'deerw': unit_cube(L.WFUR, (1.15, 1.12, 1.08)),
+        'deerd': unit_cube(L.FUR, (1.9, 1.4, 1.0)),
+        'muzzle': unit_cube(L.BLACK),
+    }
+
+
+def pose_deer(x, y, z, yaw, phase=0.0, amt=0.0, graze=0.0, lie=0.0, alert=0.0):
+    """A whitetail doe. graze lowers the head to the ground; lie lays it on its side."""
+    p = []
+    add = p.append
+    M0 = T(x, y + 0.22 * lie, z) @ RY(yaw) @ RZ(lie * 1.45)
+    for side, fz in ((-1, 0.42), (1, 0.42), (-1, -0.45), (1, -0.45)):
+        front = fz > 0
+        ph = phase + (0.0 if (side < 0) == front else math.pi)
+        sw = math.sin(ph) * 0.6 * amt + (0.25 * lie * (1 if front else -1))
+        hip = M0 @ T(side * 0.13, 0.86, fz) @ RX(-sw)
+        add(('deer', hip @ T(0, -0.2, 0) @ S(0.11, 0.42, 0.16 if not front else 0.12)))
+        knee = hip @ T(0, -0.4, 0) @ RX((0.35 if not front else -0.15) + 0.4 * amt * max(0.0, math.cos(ph)))
+        add(('deerd', knee @ T(0, -0.21, 0) @ S(0.055, 0.44, 0.06)))
+        add(('muzzle', knee @ T(0, -0.45, 0.02) @ S(0.06, 0.07, 0.09)))
+    body = M0 @ T(0, 0.98, 0)
+    add(('deer', body @ S(0.36, 0.42, 1.15)))
+    add(('deerw', body @ T(0, -0.17, 0) @ S(0.3, 0.1, 0.9)))
+    add(('deerw', body @ T(0, 0.05, -0.6) @ RX(-0.6 + 0.4 * alert) @ T(0, 0.08, 0) @ S(0.1, 0.18, 0.05)))   # tail
+    neck = body @ T(0, 0.15, 0.48) @ RX(0.6 - 1.55 * graze - 0.3 * alert)
+    add(('deer', neck @ T(0, 0.27, 0) @ S(0.16, 0.56, 0.2)))
+    head = neck @ T(0, 0.55, 0.03) @ RX(-0.6 + 1.2 * graze + 0.3 * alert)
+    add(('deer', head @ T(0, 0.04, 0.08) @ S(0.17, 0.17, 0.24)))
+    add(('deerd', head @ T(0, -0.01, 0.27) @ S(0.11, 0.11, 0.2)))
+    add(('muzzle', head @ T(0, -0.01, 0.38) @ S(0.08, 0.07, 0.03)))
+    add(('deerw', head @ T(0, -0.06, 0.22) @ S(0.1, 0.05, 0.16)))
+    for side in (-1, 1):
+        add(('muzzle', head @ T(side * 0.087, 0.07, 0.11) @ S(0.02, 0.04, 0.04)))
+        add(('deer', head @ T(side * 0.11, 0.15, -0.02) @ RZ(-side * 0.6) @ T(0, 0.08, 0) @ S(0.04, 0.17, 0.09)))
+    return p
+
+
+class Deer:
+    """Grazes near the lake. Spooks at your lantern, at running, and at a missed shot."""
+
+    def __init__(self, w, rng):
+        self.w = w
+        self.rng = rng
+        cx, cz, rx, rz = LAKE
+        for _ in range(200):
+            a = rng.random() * 6.28
+            x, z = cx + rx * 1.35 * math.cos(a), cz + rz * 1.35 * math.sin(a)
+            if float(terrain_h2(x, z)) > WL + 0.5 and math.hypot(x, z) > 40 and not w.near_tree(x, z, 2.0):
+                break
+        self.home = (x, z)
+        self.x, self.z = x, z
+        self.y = float(terrain_h2(x, z))
+        self.yaw = rng.random() * 6.28
+        self.state = 'graze'
+        self.timer = rng.uniform(3, 6)
+        self.target = None
+        self.phase = 0.0
+        self.amt = 0.0
+        self.graze = 1.0
+        self.alert = 0.0
+        self.lie = 0.0
+        self.events = []
+
+    def spook(self, px, pz):
+        if self.state in ('dying', 'dead', 'flee'):
+            return
+        self.state = 'flee'
+        self.timer = self.rng.uniform(2.5, 4.0)
+        a = math.atan2(self.x - px, self.z - pz) + self.rng.uniform(-0.5, 0.5)
+        self.target = (self.x + math.sin(a) * 40, self.z + math.cos(a) * 40)
+        self.events.append('snort')
+
+    def shot(self):
+        if self.state in ('dying', 'dead'):
+            return
+        self.state = 'dying'
+        self.timer = 0.0
+
+    def update(self, dt, player, lantern_on):
+        st = self.state
+        px, pz = player.x, player.z
+        dist = math.hypot(px - self.x, pz - self.z)
+        if st == 'dying':
+            self.timer += dt
+            self.lie = min(1.0, self.timer / 0.7)
+            self.amt = 0.0
+            if self.timer > 0.8:
+                self.state = 'dead'
+            return
+        if st == 'dead':
+            return
+        if st in ('graze', 'walk'):
+            sense = 16.0 if lantern_on else 9.0
+            if player.crouch > 0.5:
+                sense *= 0.6
+            if player.sprinting:
+                sense += 12.0
+            if dist < sense:
+                self.spook(px, pz)
+                st = self.state
+        speed = 0.0
+        if st == 'graze':
+            self.graze += (1.0 - self.graze) * min(1.0, dt * 2)
+            self.timer -= dt
+            if self.timer <= 0:
+                a = self.rng.random() * 6.28
+                r = self.rng.uniform(3, 10)
+                self.target = (self.home[0] + math.cos(a) * r, self.home[1] + math.sin(a) * r)
+                self.state = 'walk'
+        elif st == 'walk':
+            speed = 1.0
+            self.graze += (0.0 - self.graze) * min(1.0, dt * 3)
+        elif st == 'flee':
+            speed = 7.5
+            self.graze = 0.0
+            self.alert = 1.0
+            self.timer -= dt
+            if self.timer <= 0:
+                self.state = 'graze'
+                self.home = (self.x, self.z)
+                self.timer = self.rng.uniform(4, 8)
+                self.alert = 0.0
+        moved = 0.0
+        if self.target and speed > 0:
+            tx, tz = self.target
+            mx, mz = tx - self.x, tz - self.z
+            md = math.hypot(mx, mz)
+            if md < 0.5:
+                if st == 'walk':
+                    self.state = 'graze'
+                    self.timer = self.rng.uniform(4, 9)
+            else:
+                nx, nz = self.w.collide(self.x + mx / md * speed * dt, self.z + mz / md * speed * dt, 0.45, self.x, self.z)
+                moved = math.hypot(nx - self.x, nz - self.z)
+                if moved < speed * dt * 0.3 and st == 'flee':
+                    a = self.yaw + self.rng.choice((-1.4, 1.4))
+                    self.target = (self.x + math.sin(a) * 30, self.z + math.cos(a) * 30)
+                self.x, self.z = nx, nz
+                a = math.atan2(mx, mz)
+                d = (a - self.yaw + math.pi) % (2 * math.pi) - math.pi
+                self.yaw += d * min(1.0, dt * 6)
+        self.y = float(terrain_h2(self.x, self.z))
+        self.amt += (min(1.0, moved / max(dt, 1e-4) / 1.5) - self.amt) * min(1.0, dt * 8)
+        self.phase += moved * (2.2 if st != 'flee' else 1.3)
+
+    def hit_test(self, o, d):
+        """Ray (origin, unit direction) against the deer's body and neck. Returns distance or None."""
+        if self.state in ('dying', 'dead'):
+            return None
+        fx, fz = math.sin(self.yaw), math.cos(self.yaw)
+        best = None
+        for (c, r) in (((self.x, self.y + 0.98, self.z), 0.5), ((self.x + fx * 0.45, self.y + 0.98, self.z + fz * 0.45), 0.35),
+                       ((self.x - fx * 0.45, self.y + 0.98, self.z - fz * 0.45), 0.35),
+                       ((self.x + fx * 0.7, self.y + 1.45 - 0.5 * self.graze, self.z + fz * 0.7), 0.28)):
+            ox, oy, oz = o[0] - c[0], o[1] - c[1], o[2] - c[2]
+            bq = ox * d[0] + oy * d[1] + oz * d[2]
+            cq = ox * ox + oy * oy + oz * oz - r * r
+            disc = bq * bq - cq
+            if disc >= 0:
+                tt = -bq - math.sqrt(disc)
+                if tt > 0 and (best is None or tt < best):
+                    best = tt
+        return best
+
+    def parts(self):
+        return pose_deer(self.x, self.y, self.z, self.yaw, self.phase, self.amt, self.graze, self.lie, self.alert)
 
 
 def log_mesh():

@@ -216,27 +216,13 @@ CH2_WAKE_LINES = [
 
 CH2_ENDING = [
     [
-        "You stack the last of the wood and pull the door shut.",
+        "You don't sleep.",
         "",
-        "The stove catches. The cabin fills with orange light.",
+        "The wind comes in through the broken window all night.",
         "",
-        "Outside, the storm arrives all at once.",
-    ],
-    [
-        "Sometime after 3 AM, something heavy walks around the cabin.",
+        "Out in the snow, something white is still moving between the trees.",
         "",
-        "It circles it eleven times.",
-        "",
-        "It never touches the door.",
-    ],
-    [
-        "In the morning the snow around the cabin is churned with hoofprints.",
-        "",
-        "And with other tracks. Bigger ones. Coming down from the north.",
-        "",
-        "They are not hooves.",
-        "",
-        "They are hands.",
+        "It walks on its hands.",
     ],
     [
         "END OF CHAPTER TWO",

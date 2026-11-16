@@ -330,6 +330,38 @@ def synth_all():
     s['wood_pick'] = norm(knock(330, 0.0, 0.5) + knock(410, 0.11, 0.5) * 0.8, 0.7)
     s['wood_drop'] = norm(knock(300, 0.0, 0.9) + knock(370, 0.09, 0.9) + knock(280, 0.2, 0.9) * 0.8
                           + knock(450, 0.31, 0.9) * 0.6, 0.8)
+
+    # ---- rifle: a hard crack, then the shot rolling away through the hills
+    t = tt(3.0)
+    crack = band(noise(len(t)), 300, 9000) * np.exp(-t * 60) * 2.0 + np.sin(2 * np.pi * 60 * t) * np.exp(-t * 14) * 1.2
+    roll = band(noise(len(t)), 60, 700) * np.exp(-t * 1.6) * 0.5 * np.clip(t / 0.08, 0, 1)
+    s['rifle'] = norm(np.tanh(echo(crack, 0.34, 0.35, 4)[:len(t)] + roll), 1.0)
+    # ---- bolt cycled
+    s['bolt'] = norm(knock(1300, 0.0, 0.6) * 0.6 + knock(900, 0.18, 0.6) + knock(1500, 0.36, 0.6) * 0.7, 0.6)
+    # ---- a window smashed in
+    t = tt(1.4)
+    gl = np.zeros_like(t)
+    for _ in range(60):
+        i0 = int(_rng.uniform(0, 0.9) * SR)
+        ln = int(_rng.uniform(0.02, 0.12) * SR)
+        i1 = min(len(t), i0 + ln)
+        tb = np.arange(i1 - i0) / SR
+        fq = _rng.uniform(2500, 7500)
+        gl[i0:i1] += np.sin(2 * np.pi * fq * tb) * np.exp(-tb * 40) * _rng.uniform(0.3, 1.0)
+    gl += band(noise(len(t)), 1500, 9000) * np.exp(-t * 6) * 1.2 + np.sin(2 * np.pi * 70 * t) * np.exp(-t * 15)
+    s['glass'] = norm(echo(gl, 0.07, 0.25, 3), 1.0)
+    # ---- a deer's alarm snort
+    t = tt(0.5)
+    s['snort'] = norm(band(noise(len(t)), 300, 3000) * np.exp(-t * 9) * (t > 0.02), 0.7)
+    # ---- the Elk: a bugle that climbs into a scream, with grunts under it
+    t = tt(3.6)
+    f0 = np.where(t < 1.2, 220 + 900 * (t / 1.2) ** 1.5, 1120 + 700 * np.clip((t - 1.2) / 1.2, 0, 1))
+    f0 = f0 * (1 + 0.02 * np.sin(2 * np.pi * 7 * t))
+    ph = 2 * np.pi * np.cumsum(f0) / SR
+    bug = np.sin(ph) + 0.4 * np.sin(2 * ph) + 0.25 * np.sin(3.01 * ph)
+    bug *= np.clip(t / 0.2, 0, 1) * np.clip((3.6 - t) / 1.2, 0, 1)
+    grunt = band(noise(len(t)), 50, 400) * (np.sin(2 * np.pi * 2.2 * t) > 0.6) * 1.5
+    s['elk_bugle'] = norm(echo(np.tanh((bug + grunt) * 1.2), 0.21, 0.4, 5), 0.95)
     return s
 
 

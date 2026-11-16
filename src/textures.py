@@ -35,7 +35,9 @@ class L:
     MOON = 25
     CLOTH = 26
     REDCLOTH = 27
-    COUNT = 28
+    WFUR = 28        # the Elk: matted white fur
+    WFUR_B = 29      # ...and the same, soaked with blood
+    COUNT = 30
 
 
 EMIS = 100.0
@@ -396,6 +398,18 @@ def make_textures():
     rc = col((0.42, 0.05, 0.05), 0.6 + 0.6 * n + weave)
     rc = mix(rc, col((0.12, 0.06, 0.04), ones), smooth(0.55, 0.8, stain) * 0.8)
     layers[L.REDCLOTH] = (rc, ones)
+
+    # WHITE FUR (the Elk), from the brown fur's strand pattern
+    fur = layers[L.FUR][0]
+    lum = fur.mean(axis=2)
+    lum = (lum - lum.min()) / (lum.max() - lum.min() + 1e-9)
+    white = np.stack([0.58 + 0.42 * lum, 0.57 + 0.41 * lum, 0.54 + 0.38 * lum], -1) * 0.72
+    grime = fbm(rng, 3, 4)
+    white *= (1.0 - 0.25 * smooth(0.55, 0.8, grime))[..., None]
+    layers[L.WFUR] = (white, ones)
+    st = smooth(0.42, 0.62, fbm(rng, 4, 5))
+    bloodied = white * (1 - st[..., None]) + np.array((0.42, 0.03, 0.02)) * st[..., None] * (0.6 + 0.6 * lum[..., None])
+    layers[L.WFUR_B] = (bloodied, ones)
 
     out = np.zeros((L.COUNT, SIZE, SIZE, 4), np.uint8)
     for i, (rgb, a) in enumerate(layers):
