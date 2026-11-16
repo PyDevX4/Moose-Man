@@ -256,13 +256,24 @@ CH4_ENDING = [
         "",
         "He just watches you go.",
     ],
+]
+
+CH5_ENDING = [
     [
-        "END OF CHAPTER FOUR",
+        "It is morning.",
+        "",
+        "The snow has stopped. The sun is coming up over Hollins Woods,",
+        "and somewhere below you a road is running toward town.",
+        "",
+        "Behind you, in the dark, nothing moves.",
+        "",
+        "For the first time in four days, nothing is following you.",
+    ],
+    [
+        "END OF CHAPTER FIVE",
         "",
         "",
         "M O O S E   M A N",
-        "",
-        "CHAPTER FIVE  -  coming soon",
         "",
         "thank you for playing",
     ],

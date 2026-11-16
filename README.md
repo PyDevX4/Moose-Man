@@ -119,13 +119,38 @@ He smashes the floor and you both fall into a far bigger sewer underneath.
 
 Checkpoints: the start of the chapter, and entering the hall.
 
+## Chapter Five
+
+A smaller storm drain, past the second gate. Halfway down it there's a dead
+hunter, and his **shotgun** (**E** to take it).
+
+The drain opens into a derelict factory, enormous and dark. Then the Moose Man
+drags in what's left of the Elk and the Goat Man and **takes them into
+himself**. What stands up is **The Beast**: three times his height, the Elk's
+crawling white body, the Moose Man rising out of its hump, and the Goat Man
+grown out of its flank.
+
+- **Left mouse** fires (six shells), and **R** reloads. Heads take the most
+  damage. Up close does more than far away.
+- You have a **health bar**. It slowly comes back if you avoid getting hit.
+- It's slow, but it has a lot of ways to kill you:
+  - it **slams** the floor with both hands wherever you're standing;
+  - it **throws** chunks of meat that land where you're going (watch the red
+    mark);
+  - it **charges** in a straight line. If it hits a wall it's **stunned** and
+    takes extra damage;
+  - below half health it **brings the roof down**. Get off the red marks.
+- Kill it and the great gate opens. Walk out into the daylight.
+
+Checkpoints: the start of the chapter, and the start of the fight.
+
 ## Saving
 
 **CONTINUE** on the title screen picks up where you left off: the start of
 the chapter you were on, or its checkpoint if you reached it. Chapter 1's
 checkpoint is the bottom of the storm drain, where you enter the sewers.
 Chapter 2's is having all 20 bundles of firewood stacked. Chapter 3's is the
-bottom of the elevator. Chapter 4's is entering the hall. **PLAY** opens the chapter select. Each chapter is
+bottom of the elevator. Chapter 4's is entering the hall. Chapter 5's is the start of the fight. **PLAY** opens the chapter select. Each chapter is
 locked until you beat the one before it. Progress is
 saved to `%APPDATA%\MooseMan\progress.json`.
 

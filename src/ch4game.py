@@ -711,6 +711,7 @@ class Ch4Mixin:
             self.save_prog()
             self.ending_pages = lore.CH4_ENDING
             self.start_ending()
+            self.ending_next = self.start_ch5
 
     def render_exit4(self):
         t = self.x4_t

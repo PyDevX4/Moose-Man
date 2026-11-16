@@ -25,6 +25,7 @@ import chapter3 as C3
 from elk import pose_elk, elk_meshes
 from engine import MeshBuilder
 from ch4game import Ch4Mixin
+from ch5game import Ch5Mixin
 
 TITLE = "Moose Man"
 
@@ -181,7 +182,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(Ch4Mixin):
+class Game(Ch4Mixin, Ch5Mixin):
     def __init__(self, autotest=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -293,6 +294,8 @@ class Game(Ch4Mixin):
         # chapter 4: the deep sewer
         self.loading_screen("he is getting bigger...")
         self.init_ch4(prog)
+        self.loading_screen("all three of them...")
+        self.init_ch5(prog)
         self.progress = load_progress()
         self.loading_screen("listening for hooves...")
         self.audio = Audio(self.settings['volume'] / 100.0)
@@ -438,6 +441,7 @@ class Game(Ch4Mixin):
                     lev.update(pulled=False, progress=0.0, angle=-0.8)
         # chapter 4
         self.reset_ch4()
+        self.reset_ch5()
 
     def respawn(self):
         if self.chapter == 2:
@@ -448,6 +452,9 @@ class Game(Ch4Mixin):
             return
         if self.chapter == 4:
             self.respawn_ch4()
+            return
+        if self.chapter == 5:
+            self.respawn_ch5()
             return
         if self.escape:
             self.start_escape()
@@ -496,7 +503,10 @@ class Game(Ch4Mixin):
             return
         st = self.state
         if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3',
-                  'ch4open', 'exit4'):
+                  'ch4open', 'exit4', 'card5', 'beastcs', 'exit5'):
+            return
+        if st == 'play' and self.chapter == 5 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            self.fire_shotgun()
             return
         if st == 'play' and self.chapter == 2 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             self.fire_rifle()
@@ -539,6 +549,8 @@ class Game(Ch4Mixin):
                     self.obj_t = 6.0
                 elif ev.key == pygame.K_e:
                     self.interact_press()
+                elif ev.key == pygame.K_r and self.chapter == 5:
+                    self.start_reload()
             elif ev.type == pygame.MOUSEMOTION:
                 sens = 0.0022 * self.settings['sensitivity']
                 p = self.player
@@ -671,7 +683,8 @@ class Game(Ch4Mixin):
         ch2 = "CHAPTER 2  -  THE CABIN" if self.progress.get('ch2') else "CHAPTER 2  -  LOCKED"
         ch3 = "CHAPTER 3  -  THE CAVE" if self.progress.get('ch3') else "CHAPTER 3  -  LOCKED"
         ch4 = "CHAPTER 4  -  THE DEEP SEWER" if self.progress.get('ch4') else "CHAPTER 4  -  LOCKED"
-        return ["CHAPTER 1  -  THE WOODS", ch2, ch3, ch4, "BACK"]
+        ch5 = "CHAPTER 5  -  THE BEAST" if self.progress.get('ch5') else "CHAPTER 5  -  LOCKED"
+        return ["CHAPTER 1  -  THE WOODS", ch2, ch3, ch4, ch5, "BACK"]
 
     def chapter_action(self, i):
         if i == 0:
@@ -702,6 +715,14 @@ class Game(Ch4Mixin):
                 self.audio.play('clunk', 0.4)
                 self.locked_t = 2.5
                 self.locked_msg = "Chapter 4 is locked. Beat Chapter 3 first."
+        elif i == 4:
+            if self.progress.get('ch5'):
+                self.audio.play('click', 0.5)
+                self.start_ch5()
+            else:
+                self.audio.play('clunk', 0.4)
+                self.locked_t = 2.5
+                self.locked_msg = "Chapter 5 is locked. Beat Chapter 4 first."
         else:
             self.audio.play('click', 0.5)
             self.state = 'title'
@@ -711,7 +732,7 @@ class Game(Ch4Mixin):
         self.ui.fill((0, 0, 0, 140))
         self.draw_menu(self.chapter_items(), "SELECT CHAPTER")
         y0 = int(self.UH * 0.56)
-        for i, (key, need) in enumerate((('ch2', 1), ('ch3', 2), ('ch4', 3)), start=1):
+        for i, (key, need) in enumerate((('ch2', 1), ('ch3', 2), ('ch4', 3), ('ch5', 4)), start=1):
             if not self.progress.get(key):
                 w = self.f_menu.size("> CHAPTER %d  -  LOCKED" % (i + 1))[0]
                 self.blit_text("finish Chapter %d to unlock" % need, self.f_small, (130, 120, 115),
@@ -862,6 +883,9 @@ class Game(Ch4Mixin):
             return
         if self.chapter == 4:
             self.interact_ch4()
+            return
+        if self.chapter == 5:
+            self.interact_ch5()
             return
         if not self.focus:
             return
@@ -1423,7 +1447,8 @@ class Game(Ch4Mixin):
     RESUME_NAMES = {(1, 'start'): "Chapter 1  -  The Woods", (1, 'sewer'): "Chapter 1  -  The Sewers",
                     (2, 'start'): "Chapter 2  -  The Cabin", (2, 'wood20'): "Chapter 2  -  The Hunt",
                     (3, 'start'): "Chapter 3  -  The Cave", (3, 'lower'): "Chapter 3  -  The Deep Mine",
-                    (4, 'start'): "Chapter 4  -  The Deep Sewer", (4, 'hall'): "Chapter 4  -  The Hall"}
+                    (4, 'start'): "Chapter 4  -  The Deep Sewer", (4, 'hall'): "Chapter 4  -  The Hall",
+                    (5, 'start'): "Chapter 5  -  The Drain", (5, 'boss'): "Chapter 5  -  The Beast"}
 
     def set_resume(self, chapter, checkpoint):
         self.progress['resume'] = {'chapter': chapter, 'checkpoint': checkpoint}
@@ -1434,6 +1459,8 @@ class Game(Ch4Mixin):
         if isinstance(r, dict) and (r.get('chapter'), r.get('checkpoint')) in self.RESUME_NAMES:
             return r['chapter'], r['checkpoint']
         # nothing saved yet: the start of the furthest chapter you have reached
+        if self.progress.get('ch5'):
+            return 5, 'start'
         if self.progress.get('ch4'):
             return 4, 'start'
         return (3 if self.progress.get('ch3') else (2 if self.progress.get('ch2') else 1)), 'start'
@@ -1441,7 +1468,11 @@ class Game(Ch4Mixin):
     def continue_game(self):
         chapter, cp = self.resume_point()
         self.new_game()
-        if chapter == 4 and cp == 'hall':
+        if chapter == 5 and cp == 'boss':
+            self.begin_ch5('boss')
+        elif chapter == 5:
+            self.start_ch5()
+        elif chapter == 4 and cp == 'hall':
             self.continue_ch4_hall()
         elif chapter == 4:
             self.start_ch4()
@@ -1638,7 +1669,7 @@ class Game(Ch4Mixin):
     def held_lantern_pos(self, cam, yaw, pitch):
         rx, rz = -math.cos(yaw), math.sin(yaw)
         fx, fz = math.sin(yaw), math.cos(yaw)
-        side = -0.36 if (self.has_rifle and self.state == 'play') else 0.36    # rifle in the right hand, lantern in the left
+        side = -0.36 if ((self.has_rifle or getattr(self, 'has_shotgun', False)) and self.state in ('play', 'beastcs')) else 0.36    # rifle in the right hand, lantern in the left
         return (cam[0] + rx * side + fx * 0.66, cam[1] - 0.66 + 0.18 * math.sin(pitch), cam[2] + rz * side + fz * 0.66)
 
     def begin_ch2(self):
@@ -3156,6 +3187,12 @@ class Game(Ch4Mixin):
             self.update_ch4open(dt)
         elif st == 'exit4':
             self.update_exit4(dt)
+        elif st == 'card5':
+            self.update_card5(dt)
+        elif st == 'beastcs':
+            self.update_beast_cs(dt)
+        elif st == 'exit5':
+            self.update_exit5(dt)
         elif st == 'scare':
             self.scare_t += dt
             if self.scare_t > 1.7:
@@ -3182,6 +3219,9 @@ class Game(Ch4Mixin):
             return
         if self.chapter == 4:
             self.update_ch4(dt)
+            return
+        if self.chapter == 5:
+            self.update_ch5(dt)
             return
         p = self.player
         w = self.world
@@ -3704,6 +3744,17 @@ class Game(Ch4Mixin):
         elif st == 'exit4':
             self.render_exit4()
             post = self.post_params({'fear': 0.3})
+        elif st == 'card5':
+            self.r.fbo.use()
+            self.r.fbo.clear(0, 0, 0, 1)
+            self.draw_card5()
+            post = self.post_params({'fear': 0.0, 'fade': 0.0})
+        elif st == 'beastcs':
+            self.render_beast_cs()
+            post = self.beast_cs_post()
+        elif st == 'exit5':
+            self.render_exit5()
+            post = self.post_params({'fear': 0.0, 'red': 0.0})
         elif st == 'windowcs':
             self.render_window_cs()
             t = self.win_t
@@ -3747,6 +3798,9 @@ class Game(Ch4Mixin):
             return
         if self.chapter == 4:
             self.render_ch4_scene()
+            return
+        if self.chapter == 5:
+            self.render_ch5_scene()
             return
         p = self.player
         cam = p.eye()
@@ -3801,6 +3855,9 @@ class Game(Ch4Mixin):
         fwd = (math.sin(yaw), 0.0, math.cos(yaw))
         if self.chapter == 4:
             self.render_scare_ch4(cam, yaw, fwd, k)
+            return
+        if self.chapter == 5:
+            self.render_scare_ch5(cam, yaw, fwd, k)
             return
         if self.chapter == 3:
             # the Elk's split face, inches away
@@ -4013,6 +4070,8 @@ class Game(Ch4Mixin):
                     pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, lev['progress'])), 8))
             elif kind == 'elevator':
                 label = "[E] Take the elevator down" if self.power else "The elevator (no power)"
+            elif kind == 'shotgun':
+                label = "[E] Take the shotgun"
             elif kind in ('generator', 'fuse', 'fusebox'):
                 label, prog_ = self.focus_label_ch4(kind, key)
                 if prog_ > 0:
@@ -4069,6 +4128,8 @@ class Game(Ch4Mixin):
             if self.obj_t > 0:
                 a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
                 self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)
+        elif self.chapter == 5:
+            self.draw_hud_ch5()
         elif self.chapter == 4:
             self.blit_text(self.hud_ch4(), self.f_small, (215, 205, 190), (26, 56))
             if self.obj_t > 0:
@@ -4127,7 +4188,9 @@ class Game(Ch4Mixin):
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 4:
+        if self.chapter == 5:
+            title, sub = "THE BEAST", "it is all of them now."
+        elif self.chapter == 4:
             title, sub = "HE'S STRONGER NOW", "and he remembers you."
         elif self.chapter == 3:
             title, sub = "IT TOOK ITS TIME", "it was never in a hurry."

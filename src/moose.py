@@ -85,7 +85,7 @@ def herd_head_mesh():
 
 
 def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_yaw=0.0,
-               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0, tilt=0.0, lie=0.0, shift=0.0, arms_up=0.0):
+               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0, tilt=0.0, lie=0.0, shift=0.0, arms_up=0.0, legs=True):
     """Build the Moose Man as a list of (mesh_key, matrix).
 
     Tall, starved and wrong: bare pale shins and forearms, ribs and spine
@@ -106,6 +106,7 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
     M0 = T(x, y + 0.19 * lie, z) @ RY(yaw) @ RX(tilt - math.pi / 2 * lie) @ S(scale)
     hunch = hunch * up
     H = 1.55
+    n_legs = len(parts)
     # ---------------------------------------------------------- legs (reverse knees)
     for side in (-1, 1):
         ph = walk_phase + (0.0 if side < 0 else math.pi)
@@ -121,6 +122,8 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
         ankle = knee @ T(0, -0.82, 0) @ RX(-0.5)
         add(('fur', ankle @ T(0, 0.05, 0) @ S(0.12, 0.12, 0.12)))
         add(('black', ankle @ T(0, -0.06, 0.05) @ S(0.11, 0.13, 0.2)))
+    if not legs:
+        del parts[n_legs:]
     # ---------------------------------------------------------- starved torso
     torso = M0 @ T(0, H, 0) @ RX(hunch)
     add(('fur', torso @ T(0, 0.03, 0) @ S(0.3, 0.18, 0.22)))
@@ -259,7 +262,7 @@ def clamp01(v):
 
 
 def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0, head_pitch=0.0,
-              head_yaw=0.0, roll=0.0, jaw=0.0, arms=0.0, tilt=0.0, bloody=False, t=0.0, lie=0.0):
+              head_yaw=0.0, roll=0.0, jaw=0.0, arms=0.0, tilt=0.0, bloody=False, t=0.0, lie=0.0, legs=True):
     """The Goat Man: bigger than the Moose Man, and worse.
 
     A humped, shaggy body with bone spines pushing up through the hump and
@@ -277,6 +280,7 @@ def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0
     hunch = hunch * up
     crouch = crouch * up
     H = 1.8 * (1.0 - 0.42 * crouch)
+    n_legs = len(parts)
     # ---------------------------------------------------------- goat legs, split hooves
     for side in (-1, 1):
         ph = walk_phase + (0.0 if side < 0 else math.pi)
@@ -292,6 +296,8 @@ def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0
         add(('skin', ankle @ T(0, -0.17, 0) @ S(0.085, 0.34, 0.085)))
         for toe in (-1, 1):
             add(('black', ankle @ T(toe * 0.045, -0.38, 0.05) @ RY(toe * 0.12) @ S(0.075, 0.12, 0.24)))
+    if not legs:
+        del parts[n_legs:]
     # ---------------------------------------------------------- hunched body
     torso = M0 @ T(0, H, 0) @ RX(hunch)
     add(('gfur', torso @ T(0, 0.12, 0) @ S(0.5, 0.38, 0.42)))

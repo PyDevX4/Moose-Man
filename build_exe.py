@@ -44,11 +44,10 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "CHAPTER FOUR.  He isn't dead. He's changing.",
-    "The floor gives way into a far bigger sewer. Three generators, two gates, five fuses.",
-    "He's too big now for the overflow pipes -- hide in them.",
-    "Chapter Three: the Elk now sees you from far away, even standing still in the dark -- but it's slower than you.",
-    "Chapter Three's mine is more than twice as big.",
+    "CHAPTER FIVE.  A shotgun. A factory. All three of them, at once.",
+    "THE BEAST: a boss fight with health bars. It slams, throws, charges, and brings the roof down.",
+    "Left mouse fires, R reloads. Charge it into a wall and shoot it while it's stunned.",
+    "Kill it, and walk out into the daylight.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
