@@ -236,6 +236,21 @@ class Audio:
 
     def __init__(self, volume=0.8):
         self.master = volume
+        self.listener = (0.0, 0.0, 0.0)
+        self.sounds = {}
+        self.loop_ch = {}
+        self.loop_vol = {}
+        # No sound device (unplugged headset, device grabbed by another app...)
+        # must not stop the game from starting: fall back to silence.
+        self.enabled = bool(pygame.mixer.get_init())
+        if not self.enabled:
+            try:
+                pygame.mixer.init(22050, -16, 2, 512)
+                self.enabled = True
+            except Exception:
+                self.enabled = False
+        if not self.enabled:
+            return
         pygame.mixer.set_num_channels(40)
         pygame.mixer.set_reserved(len(self.LOOPS))
         raw = synth_all()
@@ -290,7 +305,9 @@ class Audio:
         self.play(name, vol * att, pan)
 
     def loop(self, name, vol, pan=0.0):
-        ch = self.loop_ch[name]
+        ch = self.loop_ch.get(name)
+        if ch is None:
+            return
         v = max(0.0, min(1.0, vol * self.master))
         if v <= 0.001:
             if ch.get_busy():
@@ -310,4 +327,13 @@ class Audio:
             ch.stop()
 
     def stop_all(self):
-        pygame.mixer.stop()
+        if self.enabled:
+            pygame.mixer.stop()
+
+    def pause(self):
+        if self.enabled:
+            pygame.mixer.pause()
+
+    def unpause(self):
+        if self.enabled:
+            pygame.mixer.unpause()

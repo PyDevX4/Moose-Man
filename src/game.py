@@ -5,6 +5,7 @@ import json
 import math
 import random
 import time
+import threading
 
 import numpy as np
 import pygame
@@ -17,12 +18,15 @@ from world import World, cell_of, cell_center, clamp
 from moose import Moose, pose_moose, moose_meshes, valve_mesh, wheel_mesh, herd_head_mesh
 from audio import Audio
 import lore
+import updater
+from version import VERSION
 
 TITLE = "Moose Man"
 
 DEFAULTS = {
     'sensitivity': 1.0, 'invert_y': False, 'fov': 75, 'brightness': 1.0, 'volume': 80,
     'res': '480p', 'grain': True, 'vhs': True, 'display': 'Windowed Fullscreen', 'show_fps': False,
+    'auto_update': True,
 }
 
 SETTINGS_ITEMS = [
@@ -36,6 +40,7 @@ SETTINGS_ITEMS = [
     ('vhs', 'Camcorder Effects', 'bool', None),
     ('display', 'Display Mode (restart)', 'choice', ['Windowed Fullscreen', 'Borderless', 'Fullscreen', 'Windowed']),
     ('show_fps', 'Show FPS', 'bool', None),
+    ('auto_update', 'Auto Update', 'bool', None),
 ]
 
 
@@ -239,6 +244,14 @@ class Game:
         self.new_game()
         self.state = 'title'
         self.set_mouse(False)
+        # updates: the check runs on its own thread and may never come back
+        self.new_build = None        # an updater.Update once one is offered
+        self.update_state = ""       # "", "working", "failed"
+        self.update_got = 0.0
+        self.quit_now = False        # set once the swap script has been started
+        if not autotest:
+            updater.tidy()
+            updater.check_async(self._update_found)
 
     # ------------------------------------------------------------------ helpers
     def loading_screen(self, text):
@@ -336,7 +349,7 @@ class Game:
     def run(self):
         if self.autotest:
             return self.run_autotest()
-        while self.running:
+        while self.running and not self.quit_now:
             dt = min(self.clock.tick(240) / 1000.0, 0.05)
             self.time += dt
             for ev in pygame.event.get():
@@ -361,7 +374,13 @@ class Game:
             self.pause()
             return
         if st == 'title':
-            self.menu_event(ev, ['BEGIN', 'SETTINGS', 'QUIT'], self.title_action)
+            self.menu_event(ev, self.title_items(), self.title_action)
+        elif st == 'update':
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                self.state = 'title'
+                self.menu_sel = 0
+                return
+            self.menu_event(ev, self.update_items(), self.update_action)
         elif st == 'pause':
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.resume()
@@ -438,8 +457,61 @@ class Game:
                     self.menu_sel = i
                     action(i)
 
+    def title_items(self):
+        items = ['BEGIN', 'SETTINGS', 'QUIT']
+        if self.new_build and self.update_state != 'working':
+            items.append('UPDATE TO %s' % self.new_build.version)
+        return items
+
+    def update_items(self):
+        if self.update_state == 'working':
+            return ['NOT NOW']
+        return ['UPDATE AND RESTART', 'NOT NOW']
+
+    def update_action(self, i):
+        self.audio.play('click', 0.5)
+        items = self.update_items()
+        if items[i] == 'UPDATE AND RESTART':
+            self.start_download()
+        else:
+            self.state = 'title'
+            self.menu_sel = 0
+
+    def _update_found(self, found):
+        """Called from the check thread; only sets fields."""
+        self.new_build = found
+        if found and self.settings.get('auto_update', True) and updater.CAN_INSTALL:
+            self.start_download()
+
+    def start_download(self):
+        if not self.new_build or self.update_state == 'working':
+            return
+        self.update_state = 'working'
+        self.update_got = 0.0
+
+        def run():
+            def progress(got, total):
+                self.update_got = (got / float(total)) if total else 0.0
+            staged = updater.download(self.new_build, progress)
+            if not staged:
+                self.update_state = 'failed'
+                return
+            save_settings(self.settings)
+            if updater.install(staged):
+                self.quit_now = True      # the batch file takes it from here
+            else:
+                self.update_state = 'failed'
+
+        t = threading.Thread(target=run, name='update-download')
+        t.daemon = True
+        t.start()
+
     def title_action(self, i):
         self.audio.play('click', 0.5)
+        if i == 3:
+            self.state = 'update'
+            self.menu_sel = 0
+            return
         if i == 0:
             self.new_game()
             self.state = 'intro'
@@ -467,15 +539,15 @@ class Game:
         self.menu_sel = 0
         self.set_mouse(False)
         self.audio.loop('creak', 0)
-        pygame.mixer.pause()
+        self.audio.pause()
 
     def resume(self):
         self.state = 'play'
         self.set_mouse(True)
-        pygame.mixer.unpause()
+        self.audio.unpause()
 
     def to_title(self):
-        pygame.mixer.unpause()
+        self.audio.unpause()
         self.audio.stop_all()
         self.new_game()
         self.state = 'title'
@@ -489,9 +561,9 @@ class Game:
 
     def settings_rows(self):
         rows = []
-        y = 120
+        y = 108
         for i in range(len(SETTINGS_ITEMS) + 1):
-            rows.append(pygame.Rect(self.UW // 2 - 300, y + i * 34 - 4, 600, 32))
+            rows.append(pygame.Rect(self.UW // 2 - 300, y + i * 32 - 4, 600, 30))
         return rows
 
     def change_setting(self, idx, d):
@@ -1098,11 +1170,13 @@ class Game:
         self.ui.fill((0, 0, 0, 0))
         st = self.state
         post = None
-        if st in ('title', 'settings') and (st == 'title' or self.settings_return == 'title'):
+        if st in ('title', 'settings', 'update') and (st != 'settings' or self.settings_return == 'title'):
             self.render_title_scene()
             post = self.post_params({'fear': 0.15, 'glitch': self.title_glitch()})
             if st == 'title':
                 self.draw_title_ui()
+            elif st == 'update':
+                self.draw_update_ui()
             else:
                 self.draw_settings_ui()
         elif st == 'intro':
@@ -1234,9 +1308,44 @@ class Game:
             self.ui.blit(img, img.get_rect(midtop=(cx + off[0] + jit, 70 + off[1])))
         self.blit_text("MOOSE MAN", self.f_title, (205, 195, 180), (cx + jit, 70), 'midtop')
         self.blit_text("HOLLINS WOODS  -  OCTOBER 31, 2003", self.f_hud, (150, 140, 130), (cx, 180), 'midtop')
-        self.draw_menu(['BEGIN', 'SETTINGS', 'QUIT'], None)
+        self.draw_menu(self.title_items(), None)
         self.blit_text("headphones recommended. play in the dark.", self.f_small, (110, 105, 100), (cx, self.UH - 30), 'midtop')
+        self.blit_text("v" + VERSION, self.f_small, (110, 105, 100), (cx, 204), 'midtop')
+        if self.new_build and self.update_state == 'working':
+            self.draw_update_bar(80, int(self.UH * 0.56) + 3 * 46 + 8)
+        elif self.update_state == 'failed':
+            self.blit_text("update failed -- try again, or download it from github.com/%s/releases" % updater.repo_path(),
+                           self.f_small, (200, 90, 80), (80, int(self.UH * 0.56) + 4 * 46 + 4))
         self.draw_osd(title=True)
+
+    def draw_update_bar(self, x, y):
+        w = 300
+        pygame.draw.rect(self.ui, (40, 36, 38, 220), (x, y, w, 12))
+        pygame.draw.rect(self.ui, (196, 50, 40, 255), (x, y, int(w * self.update_got), 12))
+        pygame.draw.rect(self.ui, (12, 11, 12, 255), (x, y, w, 12), 2)
+        self.blit_text("updating to %s  -  %d%%" % (self.new_build.version, int(self.update_got * 100)),
+                       self.f_small, (190, 160, 150), (x, y + 18))
+
+    def draw_update_ui(self):
+        self.ui.fill((0, 0, 0, 200))
+        cx = self.UW // 2
+        b = self.new_build
+        self.blit_text("UPDATE AVAILABLE", self.f_big, (200, 40, 30), (cx, 40), 'midtop')
+        if b:
+            self.blit_text("you have %s  -  %s is out" % (VERSION, b.version), self.f_hud, (180, 170, 160), (cx, 108), 'midtop')
+            y = 140
+            for raw in (b.notes or "").split("\n")[:6]:
+                self.blit_text(raw[:80], self.f_small, (160, 150, 140), (cx, y), 'midtop')
+                y += 22
+        if not updater.CAN_INSTALL:
+            self.blit_text("download it from github.com/%s/releases" % updater.repo_path(), self.f_small,
+                           (180, 170, 160), (cx, 270), 'midtop')
+        if self.update_state == 'working' and b:
+            self.draw_update_bar(cx - 150, 272)
+        elif self.update_state == 'failed':
+            self.blit_text("that did not work -- try again, or grab it from github.com/%s/releases" % updater.repo_path(),
+                           self.f_small, (206, 96, 84), (cx, 272), 'midtop')
+        self.draw_menu(self.update_items(), None)
 
     def draw_menu(self, items, header):
         y0 = int(self.UH * 0.56)

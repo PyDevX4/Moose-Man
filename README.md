@@ -22,8 +22,9 @@ the game starts.
 
 ## Play
 
-Download `Moose Man.exe` from the [Releases](../../releases) page and run it.
-You don't need to install anything. Headphones are recommended. Play in the dark.
+Download the `.zip` from the [Releases](../../releases) page, unzip it, and run
+`Moose Man.exe`. You don't need to install anything, and it updates itself.
+Headphones are recommended. Play in the dark.
 
 Or run it from source:
 
@@ -76,14 +77,26 @@ and **Display Mode**:
 A Display Mode change applies the next time you start the game. Settings are
 saved to `%APPDATA%\MooseMan\settings.json`.
 
-## Build the .exe
+## Updates
+
+The game checks this repo's latest release when it starts. If there is a newer
+version, it downloads it, checks its SHA-256, swaps it in and restarts. You can
+turn this off in **Settings → Auto Update**, and the title screen then shows an
+**UPDATE TO x.y.z** button instead. A log is written to `update.log` next to the .exe.
+
+## Build and release
 
 ```bash
 pip install -r requirements.txt pyinstaller
-build.bat
+python build_exe.py                     # build only -> dist/
+python build_exe.py --bump --publish    # bump the patch version, build, publish to GitHub
+python build_exe.py --minor --publish   # same, but 1.1.x -> 1.2.0
 ```
 
-This writes `Moose Man.exe` to the project folder.
+Publishing needs the GitHub CLI (`winget install --id GitHub.cli`, then `gh auth login`).
+Each release carries three files: `Moose Man x.y.z.zip`, which is the one people
+download, plus `MooseMan.exe` and `latest.json`, which the in-game updater reads.
+Edit `NOTES` in `build_exe.py` before publishing. It's what the update screen shows.
 
 ## Source layout
 
@@ -96,6 +109,9 @@ This writes `Moose Man.exe` to the project folder.
 | `src/textures.py` | Procedural textures (noise, bricks, graffiti, signs, flyers) |
 | `src/audio.py` | Synthesized sound and positional audio |
 | `src/lore.py` | Every note, the intro, and the ending text |
+| `src/updater.py` | Checks `latest.json`, downloads and verifies the new build, and swaps it in |
+| `src/version.py` | The version number |
+| `build_exe.py` | Builds the .exe, the zip and `latest.json`, and publishes the release |
 
 `python src/game.py --autotest <folder>` renders screenshots of every area and
 runs a quick AI and pathfinding self-test.
