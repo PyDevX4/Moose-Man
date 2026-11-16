@@ -1843,7 +1843,7 @@ class Game:
             self.audio.play('bolt', 0.8)
             self.deer = C2.Deer(self.w2, random.Random())
             self.message("Your father's .30-06. Four rounds left in the box.", 4)
-            self.set_objective("Hunt a deer. They come down to the lake at night.  [Right mouse] aim  [Left mouse] fire")
+            self.set_objective("Hunt a deer. One's been grazing straight out in front of the cabin.  [Right mouse] aim  [Left mouse] fire")
         elif kind == 'deer':
             self.start_butcher()
 

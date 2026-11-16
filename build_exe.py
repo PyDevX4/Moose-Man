@@ -44,10 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Twice as much firewood out in the woods (68 bundles), so it's much easier to find.",
-    "The Goat Man now hunts LIGHT and MOVEMENT.",
-    "Lantern off and stand still: he stops, stares toward you, looks around... and leaves.",
-    "Move or turn the light back on while he's searching, and he's on you again.",
+    "The deer now grazes about 200 feet straight out in front of the cabin.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

@@ -550,11 +550,12 @@ class Deer:
     def __init__(self, w, rng):
         self.w = w
         self.rng = rng
-        cx, cz, rx, rz = LAKE
-        for _ in range(200):
-            a = rng.random() * 6.28
-            x, z = cx + rx * 1.35 * math.cos(a), cz + rz * 1.35 * math.sin(a)
-            if float(terrain_h2(x, z)) > WL + 0.5 and math.hypot(x, z) > 40 and not w.near_tree(x, z, 2.0):
+        # out in front of the cabin, about 200 feet (61 m) straight out from the porch
+        x, z = 0.0, CABIN_HZ + 61.0
+        for _ in range(300):
+            cx_, cz_ = rng.uniform(-6.0, 6.0), CABIN_HZ + rng.uniform(58.0, 64.0)
+            if float(terrain_h2(cx_, cz_)) > WL + 0.5 and not w.near_tree(cx_, cz_, 2.0):
+                x, z = cx_, cz_
                 break
         self.home = (x, z)
         self.x, self.z = x, z
