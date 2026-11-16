@@ -467,6 +467,12 @@ class Game:
             return
         if st == 'title':
             self.menu_event(ev, self.title_items(), self.title_action)
+        elif st == 'chapters':
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                self.state = 'title'
+                self.menu_sel = 1
+                return
+            self.menu_event(ev, self.chapter_items(), self.chapter_action)
         elif st == 'update':
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.state = 'title'
@@ -550,10 +556,7 @@ class Game:
                     action(i)
 
     def title_items(self):
-        items = ['BEGIN']
-        if self.progress.get('ch2'):
-            items.append('CHAPTER 2')
-        items += ['SETTINGS', 'QUIT']
+        items = ['CONTINUE', 'PLAY', 'SETTINGS', 'QUIT']
         if self.new_build and self.update_state != 'working':
             items.append('UPDATE TO %s' % self.new_build.version)
         return items
@@ -607,19 +610,52 @@ class Game:
         if item.startswith('UPDATE'):
             self.state = 'update'
             self.menu_sel = 0
-        elif item == 'BEGIN':
-            self.new_game()
-            self.state = 'intro'
-            self.intro_t = 0.0
-        elif item == 'CHAPTER 2':
-            self.new_game()
-            self.start_daylater()
+        elif item == 'CONTINUE':
+            self.continue_game()
+        elif item == 'PLAY':
+            self.state = 'chapters'
+            self.menu_sel = 0
+            self.locked_t = 0.0
         elif item == 'SETTINGS':
             self.settings_return = 'title'
             self.settings_sel = 0
             self.state = 'settings'
         else:
             self.running = False
+
+    def chapter_items(self):
+        ch2 = "CHAPTER 2  -  THE CABIN" if self.progress.get('ch2') else "CHAPTER 2  -  LOCKED"
+        return ["CHAPTER 1  -  THE WOODS", ch2, "BACK"]
+
+    def chapter_action(self, i):
+        if i == 0:
+            self.audio.play('click', 0.5)
+            self.start_chapter1()
+        elif i == 1:
+            if self.progress.get('ch2'):
+                self.audio.play('click', 0.5)
+                self.new_game()
+                self.start_daylater()
+            else:
+                self.audio.play('clunk', 0.4)
+                self.locked_t = 2.5
+        else:
+            self.audio.play('click', 0.5)
+            self.state = 'title'
+            self.menu_sel = 1
+
+    def draw_chapters_ui(self):
+        self.ui.fill((0, 0, 0, 140))
+        self.draw_menu(self.chapter_items(), "SELECT CHAPTER")
+        y0 = int(self.UH * 0.56)
+        if not self.progress.get('ch2'):
+            w = self.f_menu.size("> CHAPTER 2  -  LOCKED")[0]
+            self.blit_text("finish Chapter 1 to unlock", self.f_small, (130, 120, 115), (80 + w + 14, y0 + 46 + 13))
+        if self.locked_t > 0:
+            a = int(255 * clamp(self.locked_t / 0.6, 0, 1))
+            self.blit_text("Chapter 2 is locked. Beat Chapter 1 first.", self.f_hud, (200, 60, 50),
+                           (self.UW // 2, self.UH - 60), 'midtop', alpha=a)
+        self.draw_osd(title=True)
 
     def pause_action(self, i):
         self.audio.play('click', 0.5)
@@ -1312,8 +1348,66 @@ class Game:
         pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, self.UH - bar, self.UW, bar))
 
     # ================================================================== CHAPTER 2
+    # ================================================================== saving and continuing
+    RESUME_NAMES = {(1, 'start'): "Chapter 1  -  The Woods", (1, 'sewer'): "Chapter 1  -  The Sewers",
+                    (2, 'start'): "Chapter 2  -  The Cabin", (2, 'wood20'): "Chapter 2  -  The Hunt"}
+
+    def set_resume(self, chapter, checkpoint):
+        self.progress['resume'] = {'chapter': chapter, 'checkpoint': checkpoint}
+        save_progress(self.progress)
+
+    def resume_point(self):
+        r = self.progress.get('resume')
+        if isinstance(r, dict) and (r.get('chapter'), r.get('checkpoint')) in self.RESUME_NAMES:
+            return r['chapter'], r['checkpoint']
+        # nothing saved yet: the start of the furthest chapter you have reached
+        return (2 if self.progress.get('ch2') else 1), 'start'
+
+    def continue_game(self):
+        chapter, cp = self.resume_point()
+        self.new_game()
+        if chapter == 2 and cp == 'wood20':
+            self.continue_ch2_wood20()
+        elif chapter == 2:
+            self.start_daylater()
+        elif cp == 'sewer':
+            self.continue_ch1_sewer()
+        else:
+            self.start_chapter1()
+
+    def start_chapter1(self):
+        self.new_game()
+        self.set_resume(1, 'start')
+        self.state = 'intro'
+        self.intro_t = 0.0
+
+    def continue_ch1_sewer(self):
+        """Chapter One checkpoint: at the bottom of the storm drain, in the junction room."""
+        p = self.player
+        x, z = cell_center(9, 18)
+        p.reset(x, W.SEWER_FLOOR, z, 0.0)
+        self.flags.update({'snap', 'farcall', 'whisper1', 'tunnel', 'tunnelcall', 'junction'})
+        self.app_done = {0, 1, 2}
+        self.app = None
+        self.checkpoint = True
+        self.clock_t = 11 * 60
+        self.state = 'play'
+        self.set_mouse(True)
+        self.message("Something has been living down here.", 4)
+        self.set_objective("Find a way through the overflow system.")
+
+    def continue_ch2_wood20(self):
+        """Chapter Two checkpoint: all twenty bundles stacked on the porch."""
+        self.chapter = 2
+        self.begin_ch2()
+        self.clock_t = (2 * 86400 + 20 * 3600 + 31 * 60) - (23 * 3600 + 58 * 60 + 7)
+        self.stacked = C2.WOOD_NEEDED
+        self.wood_taken = set(range(len(self.w2.wood_spots)))
+        self.start_rifle_phase()
+
     def start_daylater(self):
         """Black screen: 1 DAY LATER."""
+        self.set_resume(2, 'start')
         self.state = 'daylater'
         self.daylater_t = 0.0
         self.fade = 0.0
@@ -1751,6 +1845,7 @@ class Game:
         self.fear = 0.0
         self.message("That's enough wood. Now you need food. The rifle is inside.", 5)
         self.set_objective("Go into the cabin and get the rifle.  [E] opens the door")
+        self.set_resume(2, 'wood20')        # Chapter Two checkpoint: the woodpile is full
 
     def fire_rifle(self):
         if not self.has_rifle or self.fire_cd > 0 or self.state != 'play':
@@ -1997,6 +2092,8 @@ class Game:
         if t > 21.8:
             self.fade = 0.0
             self.progress['ch3'] = True
+            # Chapter Two is done; Continue goes back to its start until Chapter Three exists
+            self.progress.pop('resume', None)
             save_progress(self.progress)
             self.ending_pages = lore.CH2_ENDING
             self.start_ending()
@@ -2305,7 +2402,9 @@ class Game:
     # ------------------------------------------------------------------ update
     def update(self, dt):
         st = self.state
-        if st == 'title':
+        if st == 'chapters':
+            self.locked_t = max(0.0, getattr(self, 'locked_t', 0.0) - dt)
+        if st in ('title', 'chapters'):
             self.title_t += dt
             self.audio.loop('title_amb', 0.8)
             self.audio.loop('forest_amb', 0.35)
@@ -2560,6 +2659,7 @@ class Game:
         if room == 'junction' and 'junction' not in fl:
             fl.add('junction')
             self.checkpoint = True
+            self.set_resume(1, 'sewer')         # Chapter One checkpoint: down the drain, into the sewers
             self.message("Something has been living down here.", 4)
             self.set_objective("Find a way through the overflow system.")
         if room == 'gallery' and 'gallery' not in fl:
@@ -2786,11 +2886,13 @@ class Game:
         self.ui.fill((0, 0, 0, 0))
         st = self.state
         post = None
-        if st in ('title', 'settings', 'update') and (st != 'settings' or self.settings_return == 'title'):
+        if st in ('title', 'settings', 'update', 'chapters') and (st != 'settings' or self.settings_return == 'title'):
             self.render_title_scene()
             post = self.post_params({'fear': 0.15, 'glitch': self.title_glitch()})
             if st == 'title':
                 self.draw_title_ui()
+            elif st == 'chapters':
+                self.draw_chapters_ui()
             elif st == 'update':
                 self.draw_update_ui()
             else:
@@ -2979,13 +3081,19 @@ class Game:
         self.blit_text("MOOSE MAN", self.f_title, (205, 195, 180), (cx + jit, 70), 'midtop')
         self.blit_text("HOLLINS WOODS  -  OCTOBER 31, 2003", self.f_hud, (150, 140, 130), (cx, 180), 'midtop')
         self.draw_menu(self.title_items(), None)
+        y0 = int(self.UH * 0.56)
+        # where Continue will take you
+        sel = self.menu_sel == 0
+        cw = self.f_menu.size("> CONTINUE")[0]
+        self.blit_text(self.RESUME_NAMES[self.resume_point()], self.f_small, (150, 140, 130) if sel else (110, 104, 98),
+                       (80 + cw + 14, y0 + 13))
         self.blit_text("headphones recommended. play in the dark.", self.f_small, (110, 105, 100), (cx, self.UH - 30), 'midtop')
         self.blit_text("v" + VERSION, self.f_small, (110, 105, 100), (cx, 204), 'midtop')
         if self.new_build and self.update_state == 'working':
-            self.draw_update_bar(80, int(self.UH * 0.56) + 3 * 46 + 8)
+            self.draw_update_bar(330, y0 + 46 + 12)
         elif self.update_state == 'failed':
             self.blit_text("update failed -- try again, or download it from github.com/%s/releases" % updater.repo_path(),
-                           self.f_small, (200, 90, 80), (80, int(self.UH * 0.56) + 4 * 46 + 4))
+                           self.f_small, (200, 90, 80), (330, y0 + 46 + 12))
         self.draw_osd(title=True)
 
     def draw_update_bar(self, x, y):

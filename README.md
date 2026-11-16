@@ -79,7 +79,14 @@ snowstorm is coming. Take the lantern and go out for firewood.
   fires. Your lantern and your running will spook it.
 - Butcher it, then **get back to the cabin**. Something followed you.
 
-Finishing Chapter One unlocks **CHAPTER 2** on the title screen.
+## Saving
+
+**CONTINUE** on the title screen picks up where you left off: the start of
+the chapter you were on, or its checkpoint if you reached it. Chapter 1's
+checkpoint is the bottom of the storm drain, where you enter the sewers.
+Chapter 2's is having all 20 bundles of firewood stacked. **PLAY** opens the
+chapter select. Chapter 2 is locked until you beat Chapter 1. Progress is
+saved to `%APPDATA%\MooseMan\progress.json`.
 
 ## Notes
 

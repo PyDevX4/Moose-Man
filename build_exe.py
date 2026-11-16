@@ -44,10 +44,9 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Chapter Two continues: after the firewood, take the rifle and hunt a deer.",
-    "Butcher it -- then run. He is back, and he is between you and the cabin.",
-    "The window. The Goat Man. And something white from the north.",
-    "The snow hasn't come yet: just patches on the forest floor.",
+    "New title menu: CONTINUE picks up where you left off; PLAY opens chapter select.",
+    "Chapter 2 stays locked until you beat Chapter 1.",
+    "Progress saves. Checkpoints: reaching the sewers (Ch. 1), 20/20 firewood (Ch. 2).",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
