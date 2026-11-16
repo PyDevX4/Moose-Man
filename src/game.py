@@ -1082,7 +1082,7 @@ class Game:
                 goat = dict(x=lerp(sx, gfx, k), z=lerp(sz, gfz, k), yaw=lerp(math.atan2(gfx - sx, gfz - sz), 0.0, k),
                             crouch=0.95 * k, hunch=0.85 + 0.55 * k,
                             head_pitch=(0.55 + 0.35 * bob) if t > 6.2 else 0.3, jaw=(0.6 + 0.4 * bob) if t > 6.2 else 0.8,
-                            arms=1.25, bloody=t > 7.0, roll=0.2 * math.sin(t * 3.1))
+                            arms=0.35 + 0.1 * math.sin(t * 6.5), bloody=t > 7.0, roll=0.2 * math.sin(t * 3.1))
             elif t < 14.5:
                 # stands up over the body and looks at you
                 k = sm(10.5, 12.0)

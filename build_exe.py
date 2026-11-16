@@ -44,10 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Blood sprays when he's being eaten, and when the car hits.",
-    "It arcs, falls and pools on the road.",
-    "When they go down they land flat on their backs, limbs bent naturally.",
-    "No more somersault off the car.",
+    "The Goat Man got worse.",
+    "A lipless bone muzzle with rows of flat, human teeth. Four yellow eyes.",
+    "Massive ridged ram horns, jagged brow horns, spines through his hump.",
+    "Ribs showing through his flanks. Long claws. Split hooves.",
+    "He pins the Moose Man down while he eats now.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
