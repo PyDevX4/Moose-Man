@@ -12,7 +12,7 @@ import pygame
 import moderngl
 
 from engine import Renderer, Mesh, T, S, RX, RY, RZ
-from textures import make_textures, L
+from textures import make_textures, L, EMIS
 import world as W
 from world import World, cell_of, cell_center, clamp
 from moose import Moose, pose_moose, pose_goat, car_parts, moose_meshes, valve_mesh, wheel_mesh, herd_head_mesh
@@ -21,7 +21,9 @@ import lore
 import updater
 from version import VERSION
 import chapter2 as C2
+import chapter3 as C3
 from elk import pose_elk, elk_meshes
+from engine import MeshBuilder
 
 TITLE = "Moose Man"
 
@@ -272,6 +274,21 @@ class Game:
             self.m_moose[k] = Mesh(self.ctx, prog, v)
         from moose import unit_cube
         self.m_moose['shard'] = Mesh(self.ctx, prog, unit_cube(L.GLOW, (0.6, 0.68, 0.75)))
+        # chapter 3: the cave, the mine, the blizzard
+        self.loading_screen("the mine is waiting...")
+        self.lv_up = C3.build_upper()
+        self.lv_low = C3.build_lower()
+        bu, bl = MeshBuilder(), MeshBuilder()
+        C3.dress_upper(self.lv_up, bu)
+        C3.dress_lower(self.lv_low, bl)
+        self.m_up = Mesh(self.ctx, prog, bu.array())
+        self.m_low = Mesh(self.ctx, prog, bl.array())
+        self.m_cover2 = Mesh(self.ctx, prog, C3.snow_cover(C2.terrain_h2, -C2.HALF - 10, C2.HALF + 10, -C2.HALF - 10,
+                                                           C2.HALF + 10, 2.0, 0.45, min_h=C2.WL + 0.25))
+        self.m_cover1 = Mesh(self.ctx, prog, C3.snow_cover(W.terrain_h, -34, 34, 4, 47, 1.5, 0.35))
+        self.m_lever = Mesh(self.ctx, prog, C3.lever_handle_mesh())
+        self.m_cage = Mesh(self.ctx, prog, C3.cage_mesh())
+        self.m_bulb = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (1.0, 0.78, 0.5)))
         self.progress = load_progress()
         self.loading_screen("listening for hooves...")
         self.audio = Audio(self.settings['volume'] / 100.0)
@@ -406,10 +423,22 @@ class Game:
         self.chaser2 = None
         self.run_start = None
         self.has_meat = False
+        # chapter 3
+        self.lv = None              # the mine level you are in (upper or lower)
+        self.elk = None
+        self.power = False
+        self.goat_found_t = -1.0
+        for lv in (getattr(self, 'lv_up', None), getattr(self, 'lv_low', None)):
+            if lv is not None:
+                for lev in lv.levers:
+                    lev.update(pulled=False, progress=0.0, angle=-0.8)
 
     def respawn(self):
         if self.chapter == 2:
             self.respawn_ch2()
+            return
+        if self.chapter == 3:
+            self.respawn_ch3()
             return
         if self.escape:
             self.start_escape()
@@ -457,7 +486,7 @@ class Game:
             self.running = False
             return
         st = self.state
-        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs'):
+        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3'):
             return
         if st == 'play' and self.chapter == 2 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             self.fire_rifle()
@@ -625,7 +654,8 @@ class Game:
 
     def chapter_items(self):
         ch2 = "CHAPTER 2  -  THE CABIN" if self.progress.get('ch2') else "CHAPTER 2  -  LOCKED"
-        return ["CHAPTER 1  -  THE WOODS", ch2, "BACK"]
+        ch3 = "CHAPTER 3  -  THE CAVE" if self.progress.get('ch3') else "CHAPTER 3  -  LOCKED"
+        return ["CHAPTER 1  -  THE WOODS", ch2, ch3, "BACK"]
 
     def chapter_action(self, i):
         if i == 0:
@@ -639,6 +669,15 @@ class Game:
             else:
                 self.audio.play('clunk', 0.4)
                 self.locked_t = 2.5
+                self.locked_msg = "Chapter 2 is locked. Beat Chapter 1 first."
+        elif i == 2:
+            if self.progress.get('ch3'):
+                self.audio.play('click', 0.5)
+                self.start_ch3()
+            else:
+                self.audio.play('clunk', 0.4)
+                self.locked_t = 2.5
+                self.locked_msg = "Chapter 3 is locked. Beat Chapter 2 first."
         else:
             self.audio.play('click', 0.5)
             self.state = 'title'
@@ -648,12 +687,14 @@ class Game:
         self.ui.fill((0, 0, 0, 140))
         self.draw_menu(self.chapter_items(), "SELECT CHAPTER")
         y0 = int(self.UH * 0.56)
-        if not self.progress.get('ch2'):
-            w = self.f_menu.size("> CHAPTER 2  -  LOCKED")[0]
-            self.blit_text("finish Chapter 1 to unlock", self.f_small, (130, 120, 115), (80 + w + 14, y0 + 46 + 13))
+        for i, (key, need) in enumerate((('ch2', 1), ('ch3', 2)), start=1):
+            if not self.progress.get(key):
+                w = self.f_menu.size("> CHAPTER %d  -  LOCKED" % (i + 1))[0]
+                self.blit_text("finish Chapter %d to unlock" % need, self.f_small, (130, 120, 115),
+                               (80 + w + 14, y0 + 46 * i + 13))
         if self.locked_t > 0:
             a = int(255 * clamp(self.locked_t / 0.6, 0, 1))
-            self.blit_text("Chapter 2 is locked. Beat Chapter 1 first.", self.f_hud, (200, 60, 50),
+            self.blit_text(getattr(self, 'locked_msg', ''), self.f_hud, (200, 60, 50),
                            (self.UW // 2, self.UH - 60), 'midtop', alpha=a)
         self.draw_osd(title=True)
 
@@ -791,6 +832,9 @@ class Game:
     def interact_press(self):
         if self.chapter == 2:
             self.interact_ch2()
+            return
+        if self.chapter == 3:
+            self.interact_ch3()
             return
         if not self.focus:
             return
@@ -1350,7 +1394,8 @@ class Game:
     # ================================================================== CHAPTER 2
     # ================================================================== saving and continuing
     RESUME_NAMES = {(1, 'start'): "Chapter 1  -  The Woods", (1, 'sewer'): "Chapter 1  -  The Sewers",
-                    (2, 'start'): "Chapter 2  -  The Cabin", (2, 'wood20'): "Chapter 2  -  The Hunt"}
+                    (2, 'start'): "Chapter 2  -  The Cabin", (2, 'wood20'): "Chapter 2  -  The Hunt",
+                    (3, 'start'): "Chapter 3  -  The Cave", (3, 'lower'): "Chapter 3  -  The Deep Mine"}
 
     def set_resume(self, chapter, checkpoint):
         self.progress['resume'] = {'chapter': chapter, 'checkpoint': checkpoint}
@@ -1361,12 +1406,16 @@ class Game:
         if isinstance(r, dict) and (r.get('chapter'), r.get('checkpoint')) in self.RESUME_NAMES:
             return r['chapter'], r['checkpoint']
         # nothing saved yet: the start of the furthest chapter you have reached
-        return (2 if self.progress.get('ch2') else 1), 'start'
+        return (3 if self.progress.get('ch3') else (2 if self.progress.get('ch2') else 1)), 'start'
 
     def continue_game(self):
         chapter, cp = self.resume_point()
         self.new_game()
-        if chapter == 2 and cp == 'wood20':
+        if chapter == 3 and cp == 'lower':
+            self.continue_ch3_lower()
+        elif chapter == 3:
+            self.start_ch3()
+        elif chapter == 2 and cp == 'wood20':
             self.continue_ch2_wood20()
         elif chapter == 2:
             self.start_daylater()
@@ -2102,13 +2151,9 @@ class Game:
         self.fade = clamp((t - 20.0) / 1.6, 0, 1)
         self.fear = 0.85 if 4.5 < t < 18 else 0.3
         if t > 21.8:
+            # Chapter Two is done: straight on into Chapter Three
             self.fade = 0.0
-            self.progress['ch3'] = True
-            # Chapter Two is done; Continue goes back to its start until Chapter Three exists
-            self.progress.pop('resume', None)
-            save_progress(self.progress)
-            self.ending_pages = lore.CH2_ENDING
-            self.start_ending()
+            self.start_ch3()
 
     def window_frame(self):
         """Everything seen through the window at time t."""
@@ -2293,7 +2338,7 @@ class Game:
             self.start_ending()
 
     def draw_world2(self, cam, fwd, lights, door=None, lantern_at=None, lantern_lit=True, hold=None, parts=(),
-                    up=(0.0, 1.0, 0.0), fov=None, extras=()):
+                    up=(0.0, 1.0, 0.0), fov=None, extras=(), env=None, snowcover=False, blizzard=0.0):
         """Render the Chapter 2 map."""
         r = self.r
         w2 = self.w2
@@ -2305,11 +2350,16 @@ class Game:
                 c = L_['col']
                 all_lights.append(((x, y, z), L_['rad'], (c[0] * k, c[1] * k, c[2] * k)))
         storm = self.storm
-        env = {'ambient': (0.055, 0.06, 0.075), 'mooncol': (0.05, 0.055, 0.07), 'moondir': (0.3, -0.8, 0.5),
-               'fog': (0.045, 0.05, 0.06), 'fogdens': 0.04 + 0.03 * storm}
+        if env is None:
+            env = {'ambient': (0.055, 0.06, 0.075), 'mooncol': (0.05, 0.055, 0.07), 'moondir': (0.3, -0.8, 0.5),
+                   'fog': (0.045, 0.05, 0.06), 'fogdens': 0.04 + 0.03 * storm}
         r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights[:8], up=up)
         r.draw(self.m_ch2)
         r.draw(self.m_water2)
+        if snowcover:
+            r.draw(self.m_cover2)
+        if blizzard > 0:
+            self.draw_blizzard(cam, blizzard)
         Y = C2.CABIN_Y
         if door is None:
             door = self.door_angle
@@ -2401,6 +2451,620 @@ class Game:
         tz = cam[2] + math.cos(yaw) * dist
         return pose_goat(tx - hx, cam[1] + 0.1 - hy, tz - hz, yaw + math.pi, **kw)[0]
 
+    # ================================================================== CHAPTER 3
+    BLIZZARD_ENV = {'ambient': (0.13, 0.14, 0.16), 'mooncol': (0.08, 0.09, 0.11), 'moondir': (0.3, -0.8, 0.5),
+                    'fog': (0.2, 0.215, 0.24), 'fogdens': 0.075}
+
+    def start_ch3(self):
+        """CHAPTER THREE: the opening cutscene (cabin, blizzard, the cave, the Elk)."""
+        self.new_game()
+        self.chapter = 3
+        self.progress['ch3'] = True
+        self.set_resume(3, 'start')
+        self.state = 'wake3'
+        self.w3_t = 0.0
+        self.w3_fired = set()
+        self.window_broken = True
+        self.msgs = []
+        self.set_mouse(False)
+        self.audio.stop_all()
+        self.audio.stop_loops()
+        self.clock_t = (3 * 86400 + 3 * 3600 + 12 * 60) - (23 * 3600 + 58 * 60 + 7)
+
+    def w3_fire(self, name, at):
+        if self.w3_t >= at and name not in self.w3_fired:
+            self.w3_fired.add(name)
+            return True
+        return False
+
+    def update_wake3(self, dt):
+        self.w3_t += dt
+        self.clock_t += dt
+        t = self.w3_t
+        A = self.audio
+        A.loop('winter_amb', 0.0 if t < 3.5 else (0.95 if 8.5 < t < 18.5 else 0.45))
+        A.loop('sewer_amb', 0.45 if t > 18.5 else 0.0)
+        for at, text, dur in lore.CH3_WAKE_LINES:
+            if self.w3_fire('l%.1f' % at, at):
+                self.message(text, dur)
+        if self.w3_fire('door', 9.3):
+            A.play('door_open', 0.7)
+        for i in range(10):
+            if self.w3_fire('snowstep%d' % i, 9.8 + i * 0.42):
+                A.play_rand('step_snow', 4, 0.6)
+        for i in range(4):
+            if self.w3_fire('cavestep%d' % i, 15.2 + i * 0.5):
+                A.play_rand('step_conc', 4, 0.4)
+        if self.w3_fire('growl', 23.3):
+            A.play('breath', 1.0)
+            A.play('heart', 0.8)
+        if self.w3_fire('bugle', 26.0):
+            A.play('elk_bugle', 0.8)
+            A.play('stinger', 0.7)
+        for m in self.msgs:
+            m[1] -= dt
+        self.msgs = [m for m in self.msgs if m[1] > 0]
+        f = 0.0
+        for a, b_ in ((3.5, 4.2), ):
+            f = max(f, 1 - clamp((t - a) / (b_ - a), 0, 1)) if t > a else 1.0
+        if t < 3.5:
+            f = 1.0
+        f = max(f, clamp((t - 13.6) / 0.6, 0, 1) * clamp((15.0 - t) / 0.6, 0, 1))
+        f = max(f, clamp((t - 19.6) / 0.8, 0, 1) * clamp((23.0 - t) / 0.6, 0, 1))
+        self.fade = f
+        if t > 28.0:
+            self.fade = 0.0
+            self.begin_ch3()
+
+    def render_wake3(self):
+        t = self.w3_t
+        Y = C2.CABIN_Y
+        msgs_and_bars = True
+
+        def lerp3(a, b, k):
+            return tuple(a[i] + (b[i] - a[i]) * k for i in range(3))
+
+        def sm(a, b):
+            k = clamp((t - a) / (b - a), 0, 1)
+            return k * k * (3 - 2 * k)
+
+        def look(cam, tgt):
+            f = (tgt[0] - cam[0], tgt[1] - cam[1], tgt[2] - cam[2])
+            ln = math.sqrt(sum(v * v for v in f))
+            return tuple(v / ln for v in f)
+        if t < 3.5:
+            self.r.fbo.use()
+            self.r.fbo.clear(0, 0, 0, 1)
+            a = int(255 * clamp((t - 0.3) / 0.8, 0, 1) * clamp((3.4 - t) / 0.6, 0, 1))
+            self.blit_text("CHAPTER THREE", self.f_big, (210, 205, 198), (self.UW // 2, self.UH // 2 - 40), 'midtop', alpha=a)
+            msgs_and_bars = False
+        elif t < 8.5:
+            # the stove is dying
+            cam = (-1.6, Y + 1.15, -0.85)
+            fwd = look(cam, (0.6, Y + 0.6, -1.5))
+            glow = clamp(1.0 - (t - 3.5) / 4.5, 0.05, 1.0)
+            lights = [((0.6, Y + 0.6, -1.15), 4.5, (1.4 * glow, 0.5 * glow, 0.15 * glow)),
+                      ((1.5, Y + 0.95, -1.3), 7.0, self.lantern_col())]
+            self.draw_world2(cam, fwd, lights, door=0.0, lantern_at=(1.5, Y + 0.78, -1.3), lantern_lit=True)
+        elif t < 13.6:
+            if t < 9.4:
+                # at the broken window: a blizzard, knee-deep snow
+                cam = (-1.9, Y + 1.42, C2.WINDOW_Z)
+                fwd = look(cam, (-8.0, Y + 1.0, C2.WINDOW_Z - 1.0))
+            else:
+                # out into it, lantern held up, wading
+                k = sm(9.4, 13.6)
+                cam = lerp3((0.0, Y + 1.55, 3.4), (2.0, Y + 1.35, 16.0), k)
+                cam = (cam[0], cam[1] + 0.06 * math.sin(t * 7), cam[2])
+                fwd = look(cam, (cam[0] + 0.4, cam[1] - 0.2, cam[2] + 6))
+            lp = self.held_lantern_pos(cam, math.atan2(fwd[0], fwd[2]), 0.0)
+            self.draw_world2(cam, fwd, [((lp[0], lp[1] + 0.2, lp[2]), 8.0, self.lantern_col())],
+                             hold=(t >= 9.4, math.atan2(fwd[0], fwd[2]), 0.0), env=self.BLIZZARD_ENV,
+                             snowcover=True, blizzard=1.0)
+        elif t < 19.6:
+            lv = self.lv_up
+            mx = lv.ox + 14 * C3.C
+            if t < 18.2:
+                # the cave mouth, out of the storm
+                k = sm(14.2, 18.2)
+                cam = lerp3((mx + 1.5, 1.5, lv.oz - 16.0), (mx, 1.55, lv.oz + 6.0), k)
+                fwd = look(cam, (mx, 1.6, lv.oz + 14.0))
+            else:
+                # lie down on the cold floor
+                k = sm(18.2, 19.6)
+                cam = lerp3((mx, 1.55, lv.oz + 6.0), (mx + 0.4, 0.35, lv.oz + 11.5), k)
+                fwd = look(cam, (mx + 0.4, 2.0 - 1.4 * k, lv.oz + 16.0))
+            yaw = math.atan2(fwd[0], fwd[2])
+            lp = self.held_lantern_pos(cam, yaw, 0.0)
+            self.draw_world3(lv, cam, fwd, [((lp[0], lp[1] + 0.2, lp[2]), 8.0, self.lantern_col())],
+                             hold=(True, yaw, 0.0), blizzard=1.0)
+        else:
+            lv = self.lv_up
+            mx = lv.ox + 14 * C3.C
+            if t < 23.0:
+                self.r.fbo.use()
+                self.r.fbo.clear(0, 0, 0, 1)
+                a = int(255 * clamp((t - 20.4) / 0.7, 0, 1) * clamp((22.8 - t) / 0.6, 0, 1))
+                self.blit_text("LATER", self.f_big, (200, 195, 188), (self.UW // 2, self.UH // 2 - 30), 'midtop', alpha=a)
+            else:
+                # a growl. look at the entrance: out in the storm, it is coming
+                k = sm(23.0, 25.0)
+                cam = (mx + 0.4, 0.35 + 0.35 * sm(25.5, 27.5), lv.oz + 11.5)
+                fwd = look(cam, (mx + 0.4 - 2.0 * (1 - k), 0.9, lv.oz + 11.5 - 8.0 * k - 1.0))
+                ez = lv.oz - 30.0 + 8.0 * sm(23.0, 28.0)
+                elk = pose_elk(mx - 0.5, 0.0, ez, 0.0, phase=t * 4, amt=1.0, jaw=0.5, split=0.4, t=self.time)[0]
+                # grey storm light at the mouth, so its pale shape shows against the snow
+                storm = {'ambient': (0.1, 0.11, 0.13), 'mooncol': (0.1, 0.11, 0.14), 'moondir': (0.3, -0.8, 0.5),
+                         'fog': (0.13, 0.14, 0.16), 'fogdens': 0.024}
+                self.draw_world3(lv, cam, fwd, [], parts=[elk], blizzard=1.0, env_override=storm)
+        if msgs_and_bars:
+            y = self.UH - 120
+            for m in reversed(self.msgs):
+                txt, tl, td = m
+                al = int(clamp(tl / 0.8, 0, 1) * clamp((td - tl) / 0.3, 0, 1) * 255)
+                self.blit_text(txt, self.f_msg, (225, 215, 200), (self.UW // 2, y), 'midtop', alpha=al)
+                y -= 30
+            bar = int(self.UH * 0.11)
+            pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, 0, self.UW, bar))
+            pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, self.UH - bar, self.UW, bar))
+
+    def begin_ch3(self, where='start'):
+        """Gameplay: the upper mine (start) or the lower mine (after the elevator)."""
+        self.chapter = 3
+        self.state = 'play'
+        self.flash_on = True
+        self.fear = 0.0
+        self.red = 0.0
+        self.glitch = 0.0
+        self.heart_t = 0.0
+        self.blood = []
+        p = self.player
+        if where == 'start':
+            lv = self.lv_up
+            self.lv = lv
+            sx, sz = lv.spawn
+            p.reset(sx + 0.4, lv.y0, sz + 4.5, math.pi)
+            # it comes in out of the storm
+            mx = lv.ox + 14 * C3.C
+            self.elk = C3.ElkHunter(lv, mx - 0.5, lv.oz - 38.0)
+            self.elk.state = 'enter'
+            self.elk.go_to(*lv.center(14, 8))
+            self.elk.path = [(mx - 0.5, lv.oz - 4.0)] + self.elk.path
+            self.elk.grace = 4.0
+            self.set_objective("HIDE. Get into the narrow mineshafts -- it's too big to follow.")
+            self.message("It can't fit in the mineshafts.", 4)
+        else:
+            lv = self.lv_low
+            self.lv = lv
+            sx, sz = lv.spawn
+            p.reset(sx, lv.y0, sz, 0.0)
+            self.elk = None
+            self.goat_found_t = -1.0
+            self.power = True
+            self.set_objective("Keep going. Find a way out of the mine.")
+        self.set_mouse(True)
+
+    def continue_ch3_lower(self):
+        self.chapter = 3
+        for lev in self.lv_up.levers:
+            lev.update(pulled=True, angle=0.8)
+        self.begin_ch3('lower')
+
+    def respawn_ch3(self):
+        lv = self.lv
+        p = self.player
+        sx, sz = lv.safe
+        p.reset(sx, lv.y0, sz, 0.0)
+        cells = [c for c in lv.elk_cells() if math.hypot(lv.center(*c)[0] - sx, lv.center(*c)[1] - sz) > 30]
+        if self.elk is not None or lv is self.lv_up:
+            ex, ez = lv.center(*random.choice(cells))
+            self.elk = C3.ElkHunter(lv, ex, ez)
+            self.elk.grace = 8.0
+        self.flash_on = True
+        self.fear = 0.0
+        self.red = 0.0
+        self.glitch = 0.0
+        self.msgs = []
+        self.message("You wake in the dark of the mineshaft. It's somewhere out there.", 4)
+        self.state = 'play'
+        self.set_mouse(True)
+
+    def update_ch3(self, dt):
+        p = self.player
+        lv = self.lv
+        self.clock_t += dt
+        keys = pygame.key.get_pressed()
+        fx, fz = math.sin(p.yaw), math.cos(p.yaw)
+        rx, rz = -math.cos(p.yaw), math.sin(p.yaw)
+        p.fx, p.fz = fx, fz
+        mv = (1 if keys[pygame.K_w] or keys[pygame.K_UP] else 0) - (1 if keys[pygame.K_s] or keys[pygame.K_DOWN] else 0)
+        ms = (1 if keys[pygame.K_d] or keys[pygame.K_RIGHT] else 0) - (1 if keys[pygame.K_a] or keys[pygame.K_LEFT] else 0)
+        dx = fx * mv + rx * ms
+        dz = fz * mv + rz * ms
+        ln = math.hypot(dx, dz)
+        if ln > 0:
+            dx /= ln
+            dz /= ln
+        crouch = keys[pygame.K_LCTRL] or keys[pygame.K_c] or keys[pygame.K_RCTRL]
+        p.crouch += ((1.0 if crouch else 0.0) - p.crouch) * min(1.0, dt * 8)
+        sprint = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and ln > 0 and mv >= 0 and not crouch and not p.exhausted
+        p.sprinting = sprint
+        speed = 1.35 if crouch else (5.1 if sprint else 2.7)
+        outside = lv.has_outside and p.z < lv.oz
+        if outside:
+            speed *= 0.6            # knee-deep snow
+        if sprint:
+            p.stamina -= 21 * dt
+            if p.stamina <= 0:
+                p.stamina = 0
+                p.exhausted = True
+                self.message("You can't breathe. You have to stop.", 2.5)
+        else:
+            p.stamina = min(100.0, p.stamina + 13 * dt)
+            if p.exhausted and p.stamina > 40:
+                p.exhausted = False
+        acc = min(1.0, dt * 10)
+        p.vx += (dx * speed - p.vx) * acc
+        p.vz += (dz * speed - p.vz) * acc
+        nx, nz = lv.collide(p.x + p.vx * dt, p.z + p.vz * dt, 0.3, elk=False)
+        moved = math.hypot(nx - p.x, nz - p.z)
+        p.x, p.z = nx, nz
+        p.y = lv.y0
+        p.smooth_y += (p.y - p.smooth_y) * min(1.0, dt * 12)
+        sp = moved / max(dt, 1e-4)
+        p.bob_amt += (min(1.0, sp / 2.7) - p.bob_amt) * min(1.0, dt * 8)
+        p.bob += moved * (2.0 if not sprint else 1.7)
+        p.step_acc += moved
+        stride = 0.55 if crouch else (1.0 if sprint else 0.78)
+        if p.step_acc > stride:
+            p.step_acc = 0.0
+            vol = 0.25 if crouch else (0.85 if sprint else 0.5)
+            if outside:
+                self.audio.play_rand('step_snow', 4, vol)
+            else:
+                self.audio.play_rand('step_conc', 4, vol)
+            rad = 2.5 if crouch else (20 if sprint else 8)
+            if self.elk:
+                self.elk.hear(p.x, p.z, rad)
+        f = p.fwd()
+        a = min(1.0, dt * 16)
+        self.flash_dir = tuple(self.flash_dir[i] + (f[i] - self.flash_dir[i]) * a for i in range(3))
+        self.flicker_t = max(0.0, self.flicker_t - dt)
+        self.audio.set_listener(p.x, p.z, p.yaw)
+        near_mouth = lv.has_outside and p.z < lv.oz + 10
+        self.audio.loop('winter_amb', 0.7 if near_mouth else 0.12)
+        self.audio.loop('sewer_amb', 0.25 if near_mouth else 0.55)
+        self.audio.loop('forest_amb', 0.0)
+        self.audio.loop('title_amb', 0.0)
+        # levers
+        turning = False
+        for i, lev in enumerate(lv.levers):
+            if lev['pulled']:
+                lev['angle'] += (0.8 - lev['angle']) * min(1.0, dt * 8)
+                continue
+            if self.focus == ('lever', i) and keys[pygame.K_e]:
+                turning = True
+                lev['progress'] += dt / 1.6
+                lev['angle'] = -0.8 + 1.0 * lev['progress']
+                self.lever_noise_t = getattr(self, 'lever_noise_t', 0.0) - dt
+                if self.lever_noise_t <= 0:
+                    self.lever_noise_t = 0.5
+                    if self.elk:
+                        self.elk.hear(lev['pos'][0], lev['pos'][2], 30.0)
+                if lev['progress'] >= 1.0:
+                    lev['pulled'] = True
+                    self.audio.play('clunk', 1.0)
+                    n = sum(1 for x in lv.levers if x['pulled'])
+                    if n < 3:
+                        self.message("The lever slams down. (%d/3)" % n, 3)
+                        self.set_objective("Pull the three levers to start the elevator. (%d/3)" % n)
+                    else:
+                        self.power = True
+                        self.audio.play('drain', 0.5)
+                        self.message("Somewhere a generator coughs, and catches. The lights come on.", 5)
+                        self.set_objective("Take the elevator down. It's past the mine office.")
+                    turning = False
+        self.audio.loop('creak', 0.6 if turning else 0.0)
+        # the lower mine: what's left of the Goat Man, and then the Elk
+        if lv is self.lv_low:
+            gx, gz = lv.center(*lv.goat_cell)
+            if self.goat_found_t < 0 and math.hypot(p.x - gx, p.z - gz) < 8.0:
+                self.goat_found_t = 0.0
+                self.message("The Goat Man. What's left of him.", 4.5)
+                self.audio.play('stinger', 0.6)
+            if self.goat_found_t >= 0:
+                self.goat_found_t += dt
+                if self.elk is None and self.goat_found_t > 5.0:
+                    ex, ez = lv.center(26, 20)
+                    self.elk = C3.ElkHunter(lv, ex, ez)
+                    self.elk.state = 'investigate'
+                    self.elk.go_to(gx + 3.0, gz)
+                    self.audio.play3d('elk_bugle', ex, ez, 90, 1.0)
+                    self.message("It followed you down.", 3.5)
+                    self.set_objective("Find a way out of the mine.")
+            if lv.cell_of(p.x, p.z) == lv.exit:
+                self.start_exit3()
+                return
+        self.update_elk(dt)
+        if self.state != 'play':
+            return
+        self.focus = self.find_focus_ch3()
+        self.obj_t = max(0.0, self.obj_t - dt)
+        self.glitch += (0.0 - self.glitch) * min(1.0, dt * 20)
+
+    def update_elk(self, dt):
+        e = self.elk
+        p = self.player
+        if e is None:
+            self.fear += (0.0 - self.fear) * min(1.0, dt * 2)
+            self.audio.loop('breath', 0)
+            return
+        e.update(dt, p, self.flash_on and self.flicker_t <= 0)
+        for ev in e.events:
+            if ev == 'step':
+                self.audio.play3d('mstep', e.x, e.z, 45, 1.0)
+            elif ev == 'roar':
+                self.audio.play3d('elk_bugle', e.x, e.z, 80, 1.0)
+                self.audio.play('stinger', 0.5)
+            elif ev == 'lost':
+                if 'elk_lost' not in self.flags:
+                    self.flags.add('elk_lost')
+                    self.message("Don't move. Don't make a light.", 4)
+            elif ev == 'leave':
+                if 'elk_leave' not in self.flags:
+                    self.flags.add('elk_leave')
+                    self.message("It's moving on.", 3)
+            elif ev == 'kill':
+                self.kill()
+        e.events = []
+        d = math.hypot(e.x - p.x, e.z - p.z)
+        tf = clamp(1 - d / 24, 0, 1)
+        if e.state == 'chase':
+            tf = max(tf, 0.6)
+        elif e.state == 'search':
+            tf = max(tf, 0.75)
+        self.fear += (tf - self.fear) * min(1.0, dt * 3)
+        self.audio.loop3d('breath', e.x, e.z, 22, 1.0)
+        if self.fear > 0.15:
+            self.heart_t -= dt
+            if self.heart_t <= 0:
+                self.heart_t = 1.05 - 0.6 * self.fear
+                self.audio.play('heart', 0.25 + 0.6 * self.fear)
+        if self.fear > 0.4 and random.random() < dt * self.fear * 2.5:
+            self.flicker_t = random.uniform(0.04, 0.2)
+
+    def find_focus_ch3(self):
+        p = self.player
+        lv = self.lv
+        ex, ey, ez = p.eye()
+        f = p.fwd()
+        best, bestd = None, -1
+        for i, lev in enumerate(lv.levers):
+            if lev['pulled']:
+                continue
+            dx, dy, dz = lev['pos'][0] - ex, lev['pos'][1] - ey, lev['pos'][2] - ez
+            d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            if d < 2.3:
+                dot = (dx * f[0] + dy * f[1] + dz * f[2]) / max(d, 1e-4)
+                if dot > 0.6 and dot > bestd:
+                    best, bestd = ('lever', i), dot
+        if best:
+            return best
+        if lv is self.lv_up and lv.elevator:
+            cx, cz = lv.center(*lv.elevator)
+            if math.hypot(p.x - cx, p.z - cz) < 1.7:
+                return ('elevator', 0)
+        return None
+
+    def interact_ch3(self):
+        if not self.focus:
+            return
+        kind, _ = self.focus
+        if kind == 'elevator':
+            if self.power:
+                self.start_ride()
+            else:
+                self.message("The elevator is dead. There's no power.", 3)
+
+    # ------------------------------------------------------------------ the elevator ride
+    def start_ride(self):
+        self.state = 'ride'
+        self.ride_t = 0.0
+        self.set_mouse(False)
+        self.audio.play('clunk', 1.0)
+        self.audio.loop('breath', 0)
+
+    def update_ride(self, dt):
+        self.ride_t += dt
+        t = self.ride_t
+        self.audio.loop('creak', 0.7 if 0.6 < t < 6.0 else 0.0)
+        self.audio.loop('sewer_amb', 0.5)
+        if 6.0 < t and 'ride_end' not in self.flags:
+            self.flags.add('ride_end')
+            self.audio.play('clunk', 1.0)
+        self.fade = clamp((t - 2.2) / 0.8, 0, 1) * clamp((4.6 - t) / 0.8, 0, 1)
+        if t > 7.0:
+            self.fade = 0.0
+            self.set_resume(3, 'lower')
+            self.begin_ch3('lower')
+
+    def render_ride(self):
+        t = self.ride_t
+        if t < 3.6:
+            lv = self.lv_up
+            drop = max(0.0, t - 0.6) ** 1.6 * 0.9
+        else:
+            lv = self.lv_low
+            drop = -max(0.0, 7.0 - t) ** 1.6 * 0.55
+        cx, cz = lv.center(*lv.elevator)
+        cage_y = lv.y0 - drop
+        cam = (cx, cage_y + 1.6 + 0.02 * math.sin(t * 13), cz - 0.3)
+        fwd = (0.0, -0.25, 1.0)
+        n = math.sqrt(sum(v * v for v in fwd))
+        fwd = tuple(v / n for v in fwd)
+        lp = (cx + 0.3, cage_y + 1.2, cz + 0.2)
+        self.draw_world3(lv, cam, fwd, [(lp, 6.0, self.lantern_col())], cage_y=cage_y, hold=(True, 0.0, -0.25))
+
+    # ------------------------------------------------------------------ out, and back to the drain
+    def start_exit3(self):
+        self.state = 'exit3'
+        self.ex_t = 0.0
+        self.ex_fired = set()
+        self.set_mouse(False)
+        self.audio.loop('breath', 0)
+        self.audio.loop('sewer_amb', 0)
+
+    def update_exit3(self, dt):
+        self.ex_t += dt
+        t = self.ex_t
+        A = self.audio
+        A.loop('winter_amb', 0.9)
+        for i in range(18):
+            if ('s%d' % i) not in self.ex_fired and t > 0.6 + i * 0.38:
+                self.ex_fired.add('s%d' % i)
+                A.play_rand('step_snow', 4, 0.75)
+        if 'bugle' not in self.ex_fired and t > 4.5:
+            self.ex_fired.add('bugle')
+            A.play('elk_bugle', 0.45, pan=-0.5)
+        if 'msg' not in self.ex_fired and t > 1.0:
+            self.ex_fired.add('msg')
+            self.message("The storm drain. It was safe down there. It has to be.", 4)
+        for m in self.msgs:
+            m[1] -= dt
+        self.msgs = [m for m in self.msgs if m[1] > 0]
+        self.fade = max(clamp(1 - t / 0.8, 0, 1), clamp((t - 9.5) / 1.4, 0, 1))
+        if t > 11.2:
+            self.fade = 0.0
+            self.progress['ch4'] = True
+            self.progress.pop('resume', None)
+            save_progress(self.progress)
+            self.ending_pages = lore.CH3_ENDING
+            self.start_ending()
+
+    def render_exit3(self):
+        t = self.ex_t
+        k = clamp(t / 9.5, 0, 1)
+        z = 14.0 + 36.0 * k
+        x = 1.2 * math.sin(t * 0.7) * (1 - k)
+        g = float(W.terrain_h(x, z)) + 0.35 if z < 47.6 else self.world.floor_at(0.0, z) or 0.0
+        cam = (x, g + 1.5 + 0.07 * math.sin(t * 9.5), z)
+        fwd = (0.0, -0.05, 1.0)
+        rx = 0.25
+        lp = (cam[0] + rx, cam[1] - 0.5, cam[2] + 0.5)
+        env = dict(self.BLIZZARD_ENV)
+        if z > 47:
+            env = None
+        self.draw_world(cam, fwd, 0.0, cam, fwd, [], extra_lights=[(lp, 9.0, self.lantern_col())], env=env,
+                        extras=[(self.m_cover1, None)], blizzard=1.0 if z < 48 else 0.0)
+        y = self.UH - 120
+        for m in reversed(self.msgs):
+            txt, tl, td = m
+            al = int(clamp(tl / 0.8, 0, 1) * clamp((td - tl) / 0.3, 0, 1) * 255)
+            self.blit_text(txt, self.f_msg, (225, 215, 200), (self.UW // 2, y), 'midtop', alpha=al)
+            y -= 30
+        bar = int(self.UH * 0.11)
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, 0, self.UW, bar))
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, self.UH - bar, self.UW, bar))
+
+    # ------------------------------------------------------------------ drawing the mine
+    def draw_blizzard(self, cam, intensity):
+        r = self.r
+        t = self.time
+        for layer in range(1 + int(intensity > 0.5) * 2):
+            drift_x = t * (2.6 + 1.5 * layer) + layer * 13.7
+            drift_z = t * 0.9 + layer * 7.1
+            ox0 = drift_x + 30 * math.floor((cam[0] - 15 - drift_x) / 30)
+            oz0 = drift_z + 30 * math.floor((cam[2] - 15 - drift_z) / 30)
+            fall = (t * (2.2 + 0.4 * layer) + layer * 5.0) % 12
+            oy0 = cam[1] - 6 - fall
+            for ox in (ox0, ox0 + 30):
+                for oz in (oz0, oz0 + 30):
+                    for oy in (oy0, oy0 + 12):
+                        r.draw(self.m_snow, model=T(ox, oy, oz))
+
+    def draw_world3(self, lv, cam, fwd, lights, parts=(), extras=(), hold=None, blizzard=0.0, cage_y=None, fov=None,
+                    env_override=None):
+        r = self.r
+        all_lights = list(lights)
+        cand = []
+        for i, L_ in enumerate(lv.lights):
+            if L_['powered'] and not self.power:
+                continue
+            x, y, z = L_['pos']
+            d = math.hypot(x - cam[0], z - cam[2])
+            if d < L_['rad'] + 22:
+                k = 1.9 * (0.85 + 0.15 * math.sin(self.time * 13 + i)) if L_['powered'] else 1.9
+                c = L_['col']
+                cand.append((d, ((x, y, z), L_['rad'], (c[0] * k, c[1] * k, c[2] * k))))
+        cand.sort(key=lambda o: o[0])
+        all_lights += [c[1] for c in cand]
+        outside_t = clamp((lv.oz + 6 - cam[2]) / 10.0, 0, 1) if lv.has_outside else 0.0
+        cave = {'ambient': (0.014, 0.013, 0.013), 'mooncol': (0.0, 0.0, 0.0), 'moondir': (0.3, -0.8, 0.5),
+                'fog': (0.0, 0.0, 0.0), 'fogdens': 0.045}
+        bz = self.BLIZZARD_ENV
+        env = {k: (tuple(cave[k][i] + (bz[k][i] - cave[k][i]) * outside_t for i in range(3))
+                   if isinstance(cave[k], tuple) else cave[k] + (bz[k] - cave[k]) * outside_t) for k in cave}
+        if env_override is not None:
+            env = env_override
+        r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights[:8])
+        r.draw(self.m_up if lv is self.lv_up else self.m_low)
+        if self.power:
+            for (x, y, z) in lv.bulbs:
+                r.draw(self.m_bulb, model=T(x, y, z) @ S(0.07, 0.11, 0.07))
+        for lev in lv.levers:
+            r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
+        if lv.elevator:
+            cx, cz = lv.center(*lv.elevator)
+            r.draw(self.m_cage, model=T(cx, lv.y0 if cage_y is None else cage_y, cz))
+        if lv is self.lv_low:
+            # what is left of the Goat Man
+            gx, gz = lv.center(*lv.goat_cell)
+            dead = pose_goat(gx - 1.0, lv.y0 + 0.02, gz, 0.6, lie=1.0, jaw=1.1, head_yaw=0.9, arms=0.2, bloody=True, t=0.0)[0]
+            for key, M in dead:
+                r.draw(self.m_moose[key], model=M)
+            for ox, oz, s in ((0.3, -0.3, 0.7), (0.9, 0.2, 0.55), (-0.2, 0.4, 0.5)):
+                r.draw(self.m_moose['gore'], model=T(gx - 1.0 + ox, lv.y0 + 0.45, gz + oz - 1.5) @ S(s, 0.25, s * 0.8))
+            for k in range(5):
+                r.draw(self.m_moose['rib'], model=T(gx - 1.2 + k * 0.12, lv.y0 + 0.55, gz - 1.6) @ RX(1.2) @ S(0.03, 0.45, 0.03))
+        for mesh, M in extras:
+            r.draw(mesh, model=M)
+        for pl in parts:
+            for key, M in pl:
+                r.draw(self.m_moose[key], model=M)
+        if hold and hold[0]:
+            _, yaw, pitch = hold
+            lp = self.held_lantern_pos(cam, yaw, pitch)
+            M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
+            r.draw(self.m_lantern, model=M)
+            r.draw(self.m_lantern_lit if (self.flash_on or self.state != 'play') else self.m_lantern_off, model=M)
+        if blizzard > 0 or outside_t > 0:
+            self.draw_blizzard(cam, max(blizzard, outside_t))
+
+    def elk_parts(self):
+        e = self.elk
+        chasing = e.state in ('chase', 'search')
+        return pose_elk(e.x, e.y, e.z, e.yaw, phase=e.phase, amt=e.amt, jaw=0.7 if chasing else 0.3,
+                        split=0.8 if chasing else 0.3, head_pitch=0.15 if e.state == 'search' else 0.35, t=self.time)[0]
+
+    def render_ch3_scene(self):
+        p = self.player
+        lv = self.lv
+        cam = p.eye()
+        fwd = p.fwd()
+        lp = self.held_lantern_pos(cam, p.yaw, p.pitch)
+        lit = self.flash_on and self.flicker_t <= 0
+        lights = [((lp[0], lp[1] + 0.2, lp[2]), 10.0, self.lantern_col())] if lit else []
+        parts = [self.elk_parts()] if self.elk is not None else []
+        self.draw_world3(lv, cam, fwd, lights, parts=parts, hold=(True, p.yaw, p.pitch))
+
+    def elk_face_parts(self, cam, yaw, dist):
+        kw = dict(jaw=1.1, split=1.0, head_pitch=-0.2, head_roll=random.uniform(-0.2, 0.2), t=self.time)
+        _, head = pose_elk(0.0, 0.0, 0.0, yaw + math.pi, **kw)
+        hc = head @ np.array([0.0, 0.1, 0.35, 1.0])
+        tx = cam[0] + math.sin(yaw) * dist
+        tz = cam[2] + math.cos(yaw) * dist
+        return pose_elk(tx - float(hc[0]), cam[1] - float(hc[1]), tz - float(hc[2]), yaw + math.pi, **kw)[0]
+
     def kill(self):
         if self.state != 'play':
             return
@@ -2444,6 +3108,12 @@ class Game:
             self.update_butcher(dt)
         elif st == 'windowcs':
             self.update_window_cs(dt)
+        elif st == 'wake3':
+            self.update_wake3(dt)
+        elif st == 'ride':
+            self.update_ride(dt)
+        elif st == 'exit3':
+            self.update_exit3(dt)
         elif st == 'scare':
             self.scare_t += dt
             if self.scare_t > 1.7:
@@ -2464,6 +3134,9 @@ class Game:
     def update_play(self, dt):
         if self.chapter == 2:
             self.update_ch2(dt)
+            return
+        if self.chapter == 3:
+            self.update_ch3(dt)
             return
         p = self.player
         w = self.world
@@ -2862,14 +3535,22 @@ class Game:
         return [o[1] for o in out[:8]]
 
     def draw_world(self, cam, fwd, flash, flash_pos, flash_dir, moose_parts_list, fov=None, up=(0.0, 1.0, 0.0),
-                   extra_lights=None):
+                   extra_lights=None, env=None, extras=(), blizzard=0.0):
         r = self.r
         lights = self.gather_lights(cam[0], cam[2])
         if extra_lights:
             # headlights and the like always win a slot
             lights = (list(extra_lights) + lights)[:8]
-        r.begin(cam, fwd, fov or self.settings['fov'], self.env(cam[2]), self.time, flash, flash_pos, flash_dir, lights,
+        if env is None:
+            env = self.env(cam[2])
+        else:
+            env = dict(env, moondir=self.world.moon_dir)
+        r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, flash, flash_pos, flash_dir, lights,
                 up=up)
+        for mesh, M in extras:
+            r.draw(mesh, model=M)
+        if blizzard > 0:
+            self.draw_blizzard(cam, blizzard)
         r.draw(self.m_forest)
         r.draw(self.m_sewer)
         if cam[2] < 60:
@@ -2963,6 +3644,15 @@ class Game:
         elif st == 'butcher':
             self.render_butcher()
             post = self.post_params({'fear': 0.15})
+        elif st == 'wake3':
+            self.render_wake3()
+            post = self.post_params({'fear': 0.25 if self.w3_t > 23 else 0.05})
+        elif st == 'ride':
+            self.render_ride()
+            post = self.post_params({'fear': 0.1})
+        elif st == 'exit3':
+            self.render_exit3()
+            post = self.post_params({'fear': 0.2})
         elif st == 'windowcs':
             self.render_window_cs()
             t = self.win_t
@@ -3000,6 +3690,9 @@ class Game:
     def render_play_scene(self):
         if self.chapter == 2:
             self.render_ch2_scene()
+            return
+        if self.chapter == 3:
+            self.render_ch3_scene()
             return
         p = self.player
         cam = p.eye()
@@ -3052,6 +3745,12 @@ class Game:
         cam = (cam[0] + random.uniform(-sh, sh), cam[1] + random.uniform(-sh, sh), cam[2])
         yaw = p.yaw + random.uniform(-0.03, 0.03)
         fwd = (math.sin(yaw), 0.0, math.cos(yaw))
+        if self.chapter == 3:
+            # the Elk's split face, inches away
+            parts = [self.elk_face_parts(cam, yaw, 2.2 - min(k, 1.0) * 0.6)]
+            lp = (cam[0] + math.sin(yaw) * 0.4, cam[1] - 0.35, cam[2] + math.cos(yaw) * 0.4)
+            self.draw_world3(self.lv, cam, fwd, [(lp, 6.0, (1.5, 0.9, 0.45))], parts=parts)
+            return
         if self.chapter == 2 and self.ch2_phase == 'run':
             parts = [self.face_parts(cam, fwd, yaw, 1.75 - min(k, 1.0) * 0.45)]
             lp = (cam[0] + math.sin(yaw) * 0.4, cam[1] - 0.35, cam[2] + math.cos(yaw) * 0.4)
@@ -3248,6 +3947,15 @@ class Game:
                 label = "[E] Take the rifle"
             elif kind == 'deer':
                 label = "[E] Butcher the deer"
+            elif kind == 'lever':
+                lev = self.lv.levers[key]
+                label = "[Hold E] Pull the lever"
+                if lev['progress'] > 0:
+                    w = 160
+                    pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))
+                    pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, lev['progress'])), 8))
+            elif kind == 'elevator':
+                label = "[E] Take the elevator down" if self.power else "The elevator (no power)"
             elif kind == 'woodpile':
                 label = ("[E] Stack your firewood (%d)" % self.carried) if self.carried else "The woodpile"
             elif kind == 'valve':
@@ -3298,6 +4006,16 @@ class Game:
             if self.obj_t > 0:
                 a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
                 self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)
+        elif self.chapter == 3:
+            if self.lv is self.lv_up:
+                n = sum(1 for x in self.lv.levers if x['pulled'])
+                status = ("LEVERS %d/3" % n) if n < 3 else "THE ELEVATOR HAS POWER"
+            else:
+                status = "FIND A WAY OUT"
+            self.blit_text(status, self.f_small, (215, 205, 190), (26, 56))
+            if self.obj_t > 0:
+                a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
+                self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)
         elif self.obj_t > 0:
             a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
             self.blit_text(self.objective, self.f_small, (210, 200, 185), (26, 56), alpha=a)
@@ -3341,7 +4059,9 @@ class Game:
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 2 and self.ch2_phase == 'run':
+        if self.chapter == 3:
+            title, sub = "IT TOOK ITS TIME", "it was never in a hurry."
+        elif self.chapter == 2 and self.ch2_phase == 'run':
             title, sub = "HE CAME BACK FOR YOU", "the cabin was right there."
         elif self.chapter == 2:
             title, sub = "HE WAS STILL HUNGRY", "whatever you were carrying is gone."

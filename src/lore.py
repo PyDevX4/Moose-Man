@@ -214,6 +214,36 @@ CH2_WAKE_LINES = [
     (14.0, "You need firewood. A lot of it.", 4.0),
 ]
 
+CH3_WAKE_LINES = [
+    (4.2, "The fire's going out.", 3.5),
+    (8.6, "A blizzard. The snow outside is up to your knees.", 3.0),
+    (11.4, "It isn't safe here anymore.", 3.0),
+    (15.0, "A cave. Out of the wind, at least.", 3.4),
+    (26.6, "Hide.", 2.0),
+]
+
+CH3_ENDING = [
+    [
+        "You come out of the mountain into the white.",
+        "",
+        "You don't stop running until you see the concrete mouth",
+        "of the storm drain, half buried in snow.",
+        "",
+        "It was safe down there once.",
+        "It has to be.",
+    ],
+    [
+        "END OF CHAPTER THREE",
+        "",
+        "",
+        "M O O S E   M A N",
+        "",
+        "CHAPTER FOUR  -  coming soon",
+        "",
+        "thank you for playing",
+    ],
+]
+
 CH2_ENDING = [
     [
         "You don't sleep.",

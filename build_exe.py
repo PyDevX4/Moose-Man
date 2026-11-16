@@ -44,7 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "The deer now grazes about 200 feet straight out in front of the cabin.",
+    "CHAPTER THREE.  A blizzard. A cave. A mine.",
+    "Something white crawls in out of the storm. Hide.",
+    "It can't fit in the narrow mineshafts -- it can only wait at the opening.",
+    "Three levers. An elevator. What's left of the Goat Man at the bottom.",
+    "Beat Chapter Two (or pick it from PLAY once unlocked) to get there.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

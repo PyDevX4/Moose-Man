@@ -82,13 +82,32 @@ snowstorm is coming. Take the lantern and go out for firewood.
   fires. Your lantern and your running will spook it.
 - Butcher it, then **get back to the cabin**. Something followed you.
 
+## Chapter Three
+
+*The fire is going out.* A blizzard has buried everything knee-deep, and the
+cabin isn't safe anymore. You take the lantern into the storm and find a cave.
+When you wake, something white is crawling toward it.
+
+- **Hide.** The Elk hunts the huge caverns by **light and movement**, like the
+  Goat Man. But it **can't fit into the narrow timbered mineshafts**. Get into
+  one and it can only wait at the opening, staring in, until it gives up.
+- Find and pull **three levers** in the caverns (hold **E**). Pulling one is
+  loud, and it will come.
+- With all three pulled, the generator starts and the lights come on. Take the
+  **elevator** down from beside the mine office.
+- Down there you'll find what's left of the Goat Man. Then it follows you down.
+  **Find the old way out of the mine.**
+
+Checkpoints: the start of the chapter, and the bottom of the elevator.
+
 ## Saving
 
 **CONTINUE** on the title screen picks up where you left off: the start of
 the chapter you were on, or its checkpoint if you reached it. Chapter 1's
 checkpoint is the bottom of the storm drain, where you enter the sewers.
-Chapter 2's is having all 20 bundles of firewood stacked. **PLAY** opens the
-chapter select. Chapter 2 is locked until you beat Chapter 1. Progress is
+Chapter 2's is having all 20 bundles of firewood stacked. Chapter 3's is the
+bottom of the elevator. **PLAY** opens the chapter select. Each chapter is
+locked until you beat the one before it. Progress is
 saved to `%APPDATA%\MooseMan\progress.json`.
 
 ## Notes
