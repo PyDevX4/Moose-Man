@@ -362,11 +362,63 @@ def synth_all():
     bug *= np.clip(t / 0.2, 0, 1) * np.clip((3.6 - t) / 1.2, 0, 1)
     grunt = band(noise(len(t)), 50, 400) * (np.sin(2 * np.pi * 2.2 * t) > 0.6) * 1.5
     s['elk_bugle'] = norm(echo(np.tanh((bug + grunt) * 1.2), 0.21, 0.4, 5), 0.95)
+
+    # ---- chapter 4 -------------------------------------------------------
+    # bones cracking and re-setting: a burst of wet snaps
+    t = tt(2.4)
+    cr = np.zeros_like(t)
+    for _ in range(26):
+        i0 = int(_rng.uniform(0, 2.2) * SR)
+        ln = int(_rng.uniform(0.01, 0.05) * SR)
+        i1 = min(len(t), i0 + ln)
+        tb = np.arange(i1 - i0) / SR
+        cr[i0:i1] += band(noise(i1 - i0), 800, 7000) * np.exp(-tb * 120) * _rng.uniform(0.4, 1.0) \
+            + np.sin(2 * np.pi * _rng.uniform(120, 260) * tb) * np.exp(-tb * 60) * 0.6
+    wet = band(noise(len(t)), 80, 900) * slow_mod(len(t), 6, 1.0) * 0.25
+    s['crack'] = norm(echo(cr + wet, 0.05, 0.2, 2), 0.95)
+    # the floor giving way: a huge slam, then concrete breaking up and pouring down
+    t = tt(4.0)
+    slam = np.sin(2 * np.pi * 42 * t) * np.exp(-t * 3.5) * 1.6 + band(noise(len(t)), 40, 2500) * np.exp(-t * 7) * 1.4
+    rub = band(noise(len(t)), 150, 3500) * np.clip((t - 0.25) / 0.2, 0, 1) * np.exp(-np.maximum(0, t - 0.4) * 1.3)
+    rub *= 0.5 + 0.5 * (noise(len(t)) > 0.7)
+    s['smash'] = norm(np.tanh(echo(slam + rub * 0.8, 0.29, 0.4, 5)[:len(t)] * 1.3), 1.0)
+    # his new voice: low, doubled and torn
+    t = tt(3.2)
+    f0 = 58 + 22 * np.sin(2 * np.pi * 0.4 * t) + 10 * slow_mod(len(t), 9, 1.0)
+    ph = 2 * np.pi * np.cumsum(f0) / SR
+    v = np.sin(ph) + 0.7 * np.sin(2.01 * ph) + 0.5 * np.sin(3.03 * ph) + 0.4 * np.sin(1.49 * ph)
+    v = np.tanh(v * 2.2) + band(noise(len(t)), 100, 1800) * 0.9
+    v *= np.clip(t / 0.25, 0, 1) * np.clip((3.2 - t) / 1.0, 0, 1)
+    s['moose_roar'] = norm(echo(v, 0.23, 0.45, 5), 1.0)
+    # a generator: pull cord, a cough, then it catches
+    t = tt(2.6)
+    cord = band(noise(len(t)), 600, 5000) * (t < 0.35) * np.clip(t / 0.05, 0, 1) * 0.6
+    eng = (np.sign(np.sin(2 * np.pi * (14 + 12 * np.clip((t - 0.9) / 1.0, 0, 1)) * t)) + 1) * 0.5
+    eng = band(eng * noise(len(t)), 40, 1200) * np.clip((t - 0.7) / 0.3, 0, 1)
+    s['gen_start'] = norm(cord + eng + band(noise(len(t)), 60, 300) * np.exp(-np.abs(t - 0.6) * 15), 0.9)
+    t = tt(3.0)
+    hum = np.sin(2 * np.pi * 60 * t) + 0.5 * np.sin(2 * np.pi * 120 * t) + band(noise(len(t)), 40, 500) * 1.2 \
+        * (0.7 + 0.3 * np.sin(2 * np.pi * 26 * t))
+    s['gen_hum'] = norm(loopable(hum, 0.5), 0.6)
+    # a huge gate grinding up on its chains
+    t = tt(6.0)
+    f = 70 + 15 * slow_mod(len(t), 3, 1.0)
+    grind = np.sin(2 * np.pi * np.cumsum(f) / SR) * band(noise(len(t)), 0, 25) * 6
+    grind = band(grind, 50, 2500) + band(noise(len(t)), 200, 3000) * 0.3 * (noise(len(t)) > 0.4)
+    chain = np.zeros_like(t)
+    for k in range(40):
+        chain += knock(1200 + 200 * (k % 3), k * 0.14, 6.0) * 0.25
+    grind = (grind + chain) * np.clip(t / 0.3, 0, 1) * np.clip((6.0 - t) / 0.8, 0, 1)
+    s['gate'] = norm(echo(grind, 0.31, 0.4, 4)[:len(t)] + np.sin(2 * np.pi * 50 * t) * np.exp(-np.abs(t - 5.6) * 9) * 1.5, 1.0)
+    # a fuse pushed home: click, then a buzz
+    t = tt(0.8)
+    buzz = np.sign(np.sin(2 * np.pi * 120 * t)) * 0.3 * np.clip((t - 0.1) / 0.02, 0, 1) * np.exp(-t * 4)
+    s['fuse'] = norm(knock(2200, 0.0, 0.8) + band(buzz, 100, 3000), 0.7)
     return s
 
 
 class Audio:
-    LOOPS = ('forest_amb', 'sewer_amb', 'breath', 'creak', 'title_amb', 'winter_amb')
+    LOOPS = ('forest_amb', 'sewer_amb', 'breath', 'creak', 'title_amb', 'winter_amb', 'gen_hum')
 
     def __init__(self, volume=0.8):
         self.master = volume

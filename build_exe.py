@@ -44,11 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "CHAPTER THREE.  A blizzard. A cave. A mine.",
-    "Something white crawls in out of the storm. Hide.",
-    "It can't fit in the narrow mineshafts -- it can only wait at the opening.",
-    "Three levers. An elevator. What's left of the Goat Man at the bottom.",
-    "Beat Chapter Two (or pick it from PLAY once unlocked) to get there.",
+    "CHAPTER FOUR.  He isn't dead. He's changing.",
+    "The floor gives way into a far bigger sewer. Three generators, two gates, five fuses.",
+    "He's too big now for the overflow pipes -- hide in them.",
+    "Chapter Three: the Elk now sees you from far away, even standing still in the dark -- but it's slower than you.",
+    "Chapter Three's mine is more than twice as big.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

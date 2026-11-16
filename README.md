@@ -88,9 +88,11 @@ snowstorm is coming. Take the lantern and go out for firewood.
 cabin isn't safe anymore. You take the lantern into the storm and find a cave.
 When you wake, something white is crawling toward it.
 
-- **Hide.** The Elk hunts the huge caverns by **light and movement**, like the
-  Goat Man. But it **can't fit into the narrow timbered mineshafts**. Get into
-  one and it can only wait at the opening, staring in, until it gives up.
+- **Hide.** The Elk sees a long way through the huge caverns. It spots your
+  lantern from across the mine, and it can see you in the dark **even when you
+  stand still**. But it is **slower than you**, and it **can't fit into the
+  narrow timbered mineshafts**. Get into one and it can only wait at the
+  opening, staring in, until it gives up.
 - Find and pull **three levers** in the caverns (hold **E**). Pulling one is
   loud, and it will come.
 - With all three pulled, the generator starts and the lights come on. Take the
@@ -100,13 +102,30 @@ When you wake, something white is crawling toward it.
 
 Checkpoints: the start of the chapter, and the bottom of the elevator.
 
+## Chapter Four
+
+*You thought the Moose Man was dead.* Back in the storm drain, he walks out of
+the dark and starts to **change**: bigger, heavier, both antlers grown back.
+He smashes the floor and you both fall into a far bigger sewer underneath.
+
+- Start the **three backup generators** (hold **E** on the starter cord). It's
+  loud. Each one lights its own tunnels.
+- With all three running, the first big gate opens onto a **huge hall**.
+- Find **five fuses** in the sewers around the hall and put them in the fuse
+  box beside the second gate, which is even bigger. Then go through.
+- He hunts **light and movement**, and he's faster than before. He is
+  **too big now for the overflow pipes**. Hide in one and he'll tear at the
+  opening, then stand there, then leave.
+
+Checkpoints: the start of the chapter, and entering the hall.
+
 ## Saving
 
 **CONTINUE** on the title screen picks up where you left off: the start of
 the chapter you were on, or its checkpoint if you reached it. Chapter 1's
 checkpoint is the bottom of the storm drain, where you enter the sewers.
 Chapter 2's is having all 20 bundles of firewood stacked. Chapter 3's is the
-bottom of the elevator. **PLAY** opens the chapter select. Each chapter is
+bottom of the elevator. Chapter 4's is entering the hall. **PLAY** opens the chapter select. Each chapter is
 locked until you beat the one before it. Progress is
 saved to `%APPDATA%\MooseMan\progress.json`.
 

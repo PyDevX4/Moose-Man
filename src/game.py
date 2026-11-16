@@ -24,6 +24,7 @@ import chapter2 as C2
 import chapter3 as C3
 from elk import pose_elk, elk_meshes
 from engine import MeshBuilder
+from ch4game import Ch4Mixin
 
 TITLE = "Moose Man"
 
@@ -180,7 +181,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game:
+class Game(Ch4Mixin):
     def __init__(self, autotest=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -289,6 +290,9 @@ class Game:
         self.m_lever = Mesh(self.ctx, prog, C3.lever_handle_mesh())
         self.m_cage = Mesh(self.ctx, prog, C3.cage_mesh())
         self.m_bulb = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (1.0, 0.78, 0.5)))
+        # chapter 4: the deep sewer
+        self.loading_screen("he is getting bigger...")
+        self.init_ch4(prog)
         self.progress = load_progress()
         self.loading_screen("listening for hooves...")
         self.audio = Audio(self.settings['volume'] / 100.0)
@@ -432,6 +436,8 @@ class Game:
             if lv is not None:
                 for lev in lv.levers:
                     lev.update(pulled=False, progress=0.0, angle=-0.8)
+        # chapter 4
+        self.reset_ch4()
 
     def respawn(self):
         if self.chapter == 2:
@@ -439,6 +445,9 @@ class Game:
             return
         if self.chapter == 3:
             self.respawn_ch3()
+            return
+        if self.chapter == 4:
+            self.respawn_ch4()
             return
         if self.escape:
             self.start_escape()
@@ -486,7 +495,8 @@ class Game:
             self.running = False
             return
         st = self.state
-        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3'):
+        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3',
+                  'ch4open', 'exit4'):
             return
         if st == 'play' and self.chapter == 2 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             self.fire_rifle()
@@ -552,7 +562,12 @@ class Game:
                 self.ending_page += 1
                 self.ending_t = 0.0
                 if self.ending_page >= len(self.ending_pages):
-                    self.to_title()
+                    nxt = getattr(self, 'ending_next', None)
+                    self.ending_next = None
+                    if nxt:
+                        nxt()
+                    else:
+                        self.to_title()
 
     def menu_rects(self, items, y0):
         rects = []
@@ -655,7 +670,8 @@ class Game:
     def chapter_items(self):
         ch2 = "CHAPTER 2  -  THE CABIN" if self.progress.get('ch2') else "CHAPTER 2  -  LOCKED"
         ch3 = "CHAPTER 3  -  THE CAVE" if self.progress.get('ch3') else "CHAPTER 3  -  LOCKED"
-        return ["CHAPTER 1  -  THE WOODS", ch2, ch3, "BACK"]
+        ch4 = "CHAPTER 4  -  THE DEEP SEWER" if self.progress.get('ch4') else "CHAPTER 4  -  LOCKED"
+        return ["CHAPTER 1  -  THE WOODS", ch2, ch3, ch4, "BACK"]
 
     def chapter_action(self, i):
         if i == 0:
@@ -678,6 +694,14 @@ class Game:
                 self.audio.play('clunk', 0.4)
                 self.locked_t = 2.5
                 self.locked_msg = "Chapter 3 is locked. Beat Chapter 2 first."
+        elif i == 3:
+            if self.progress.get('ch4'):
+                self.audio.play('click', 0.5)
+                self.start_ch4()
+            else:
+                self.audio.play('clunk', 0.4)
+                self.locked_t = 2.5
+                self.locked_msg = "Chapter 4 is locked. Beat Chapter 3 first."
         else:
             self.audio.play('click', 0.5)
             self.state = 'title'
@@ -687,7 +711,7 @@ class Game:
         self.ui.fill((0, 0, 0, 140))
         self.draw_menu(self.chapter_items(), "SELECT CHAPTER")
         y0 = int(self.UH * 0.56)
-        for i, (key, need) in enumerate((('ch2', 1), ('ch3', 2)), start=1):
+        for i, (key, need) in enumerate((('ch2', 1), ('ch3', 2), ('ch4', 3)), start=1):
             if not self.progress.get(key):
                 w = self.f_menu.size("> CHAPTER %d  -  LOCKED" % (i + 1))[0]
                 self.blit_text("finish Chapter %d to unlock" % need, self.f_small, (130, 120, 115),
@@ -835,6 +859,9 @@ class Game:
             return
         if self.chapter == 3:
             self.interact_ch3()
+            return
+        if self.chapter == 4:
+            self.interact_ch4()
             return
         if not self.focus:
             return
@@ -1395,7 +1422,8 @@ class Game:
     # ================================================================== saving and continuing
     RESUME_NAMES = {(1, 'start'): "Chapter 1  -  The Woods", (1, 'sewer'): "Chapter 1  -  The Sewers",
                     (2, 'start'): "Chapter 2  -  The Cabin", (2, 'wood20'): "Chapter 2  -  The Hunt",
-                    (3, 'start'): "Chapter 3  -  The Cave", (3, 'lower'): "Chapter 3  -  The Deep Mine"}
+                    (3, 'start'): "Chapter 3  -  The Cave", (3, 'lower'): "Chapter 3  -  The Deep Mine",
+                    (4, 'start'): "Chapter 4  -  The Deep Sewer", (4, 'hall'): "Chapter 4  -  The Hall"}
 
     def set_resume(self, chapter, checkpoint):
         self.progress['resume'] = {'chapter': chapter, 'checkpoint': checkpoint}
@@ -1406,12 +1434,18 @@ class Game:
         if isinstance(r, dict) and (r.get('chapter'), r.get('checkpoint')) in self.RESUME_NAMES:
             return r['chapter'], r['checkpoint']
         # nothing saved yet: the start of the furthest chapter you have reached
+        if self.progress.get('ch4'):
+            return 4, 'start'
         return (3 if self.progress.get('ch3') else (2 if self.progress.get('ch2') else 1)), 'start'
 
     def continue_game(self):
         chapter, cp = self.resume_point()
         self.new_game()
-        if chapter == 3 and cp == 'lower':
+        if chapter == 4 and cp == 'hall':
+            self.continue_ch4_hall()
+        elif chapter == 4:
+            self.start_ch4()
+        elif chapter == 3 and cp == 'lower':
             self.continue_ch3_lower()
         elif chapter == 3:
             self.start_ch3()
@@ -2940,6 +2974,7 @@ class Game:
             save_progress(self.progress)
             self.ending_pages = lore.CH3_ENDING
             self.start_ending()
+            self.ending_next = self.start_ch4
 
     def render_exit3(self):
         t = self.ex_t
@@ -3065,6 +3100,9 @@ class Game:
         tz = cam[2] + math.cos(yaw) * dist
         return pose_elk(tx - float(hc[0]), cam[1] - float(hc[1]), tz - float(hc[2]), yaw + math.pi, **kw)[0]
 
+    def save_prog(self):
+        save_progress(self.progress)
+
     def kill(self):
         if self.state != 'play':
             return
@@ -3114,6 +3152,10 @@ class Game:
             self.update_ride(dt)
         elif st == 'exit3':
             self.update_exit3(dt)
+        elif st == 'ch4open':
+            self.update_ch4open(dt)
+        elif st == 'exit4':
+            self.update_exit4(dt)
         elif st == 'scare':
             self.scare_t += dt
             if self.scare_t > 1.7:
@@ -3137,6 +3179,9 @@ class Game:
             return
         if self.chapter == 3:
             self.update_ch3(dt)
+            return
+        if self.chapter == 4:
+            self.update_ch4(dt)
             return
         p = self.player
         w = self.world
@@ -3653,6 +3698,12 @@ class Game:
         elif st == 'exit3':
             self.render_exit3()
             post = self.post_params({'fear': 0.2})
+        elif st == 'ch4open':
+            self.render_ch4open()
+            post = self.ch4open_post()
+        elif st == 'exit4':
+            self.render_exit4()
+            post = self.post_params({'fear': 0.3})
         elif st == 'windowcs':
             self.render_window_cs()
             t = self.win_t
@@ -3693,6 +3744,9 @@ class Game:
             return
         if self.chapter == 3:
             self.render_ch3_scene()
+            return
+        if self.chapter == 4:
+            self.render_ch4_scene()
             return
         p = self.player
         cam = p.eye()
@@ -3745,6 +3799,9 @@ class Game:
         cam = (cam[0] + random.uniform(-sh, sh), cam[1] + random.uniform(-sh, sh), cam[2])
         yaw = p.yaw + random.uniform(-0.03, 0.03)
         fwd = (math.sin(yaw), 0.0, math.cos(yaw))
+        if self.chapter == 4:
+            self.render_scare_ch4(cam, yaw, fwd, k)
+            return
         if self.chapter == 3:
             # the Elk's split face, inches away
             parts = [self.elk_face_parts(cam, yaw, 2.2 - min(k, 1.0) * 0.6)]
@@ -3956,6 +4013,12 @@ class Game:
                     pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, lev['progress'])), 8))
             elif kind == 'elevator':
                 label = "[E] Take the elevator down" if self.power else "The elevator (no power)"
+            elif kind in ('generator', 'fuse', 'fusebox'):
+                label, prog_ = self.focus_label_ch4(kind, key)
+                if prog_ > 0:
+                    w = 160
+                    pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))
+                    pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, prog_)), 8))
             elif kind == 'woodpile':
                 label = ("[E] Stack your firewood (%d)" % self.carried) if self.carried else "The woodpile"
             elif kind == 'valve':
@@ -4003,6 +4066,11 @@ class Game:
             else:
                 status = "GET BACK TO THE CABIN"
             self.blit_text(status, self.f_small, (215, 205, 190), (26, 56))
+            if self.obj_t > 0:
+                a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
+                self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)
+        elif self.chapter == 4:
+            self.blit_text(self.hud_ch4(), self.f_small, (215, 205, 190), (26, 56))
             if self.obj_t > 0:
                 a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
                 self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)
@@ -4059,7 +4127,9 @@ class Game:
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 3:
+        if self.chapter == 4:
+            title, sub = "HE'S STRONGER NOW", "and he remembers you."
+        elif self.chapter == 3:
             title, sub = "IT TOOK ITS TIME", "it was never in a hurry."
         elif self.chapter == 2 and self.ch2_phase == 'run':
             title, sub = "HE CAME BACK FOR YOU", "the cabin was right there."

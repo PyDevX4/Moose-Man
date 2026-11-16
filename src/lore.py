@@ -232,13 +232,37 @@ CH3_ENDING = [
         "It was safe down there once.",
         "It has to be.",
     ],
+]
+
+CH4_OPEN_LINES = [
+    (4.0, "Back in the drain. Back where it started.", 3.2),
+    (7.0, "The Goat Man ate him. He's dead. It's safe down here.", 3.4),
+    (11.2, "No.", 1.6),
+    (12.8, "I watched him die.", 2.4),
+    (16.0, "What is he doing", 2.4),
+    (27.5, "...", 1.5),
+    (30.0, "He got up.", 2.0),
+    (32.6, "It's so much bigger down here.", 3.0),
+]
+
+CH4_ENDING = [
     [
-        "END OF CHAPTER THREE",
+        "The gate shuts behind you.",
+        "",
+        "It is warmer on this side. The air moves,",
+        "like something very big is breathing somewhere ahead.",
+        "",
+        "Behind the bars, he doesn't follow.",
+        "",
+        "He just watches you go.",
+    ],
+    [
+        "END OF CHAPTER FOUR",
         "",
         "",
         "M O O S E   M A N",
         "",
-        "CHAPTER FOUR  -  coming soon",
+        "CHAPTER FIVE  -  coming soon",
         "",
         "thank you for playing",
     ],

@@ -315,7 +315,7 @@ class Level:
 
 # ---------------------------------------------------------------------- the two levels
 def build_upper():
-    lv = Level(30, 28, -29.0, 0.0, 0.0, seed=303)
+    lv = Level(48, 43, -29.0, 0.0, 0.0, seed=303)
     lv.has_outside = True
     lv.carve(13, 0, 14, 4, 'M')              # the cave mouth
     lv.carve(8, 5, 20, 10, '.')              # entrance cavern
@@ -332,6 +332,20 @@ def build_upper():
     lv.carve(9, 22, 21, 26, '.')             # crystal cavern
     lv.carve(7, 21, 8, 22, '.')              # west cavern <-> crystal cavern
     lv.carve(21, 17, 22, 21, '.')            # east cavern <-> crystal cavern
+    # further in: the deep east cavern, the northeast cavern, the great hall
+    lv.carve(29, 14, 32, 15, '.')
+    lv.carve(33, 6, 43, 20, '.')             # deep east cavern
+    lv.carve(26, 8, 32, 8, ',')              # mineshaft from the big passage
+    lv.carve(38, 21, 38, 25, ',')            # mineshaft north
+    lv.carve(34, 26, 44, 33, '.')            # northeast cavern
+    lv.carve(31, 30, 33, 31, '.')
+    lv.carve(6, 31, 30, 39, '.')             # the great hall
+    for c, r in ((10, 34), (16, 36), (22, 33), (26, 37), (12, 38)):
+        lv.g[r][c] = '#'                     # rock pillars
+    lv.carve(17, 27, 18, 30, '.')            # crystal cavern <-> great hall
+    lv.carve(3, 23, 3, 30, ',')              # mineshaft from the west cavern
+    lv.carve(3, 31, 5, 31, ',')
+    lv.carve(14, 40, 24, 40, ',')            # a long gallery off the great hall
     lv.elevator = (17, 18)
     lv.finish()
     lv.spawn = lv.center(14, 6)              # where you lie down
@@ -340,7 +354,7 @@ def build_upper():
 
 
 def build_lower():
-    lv = Level(30, 28, -31.0, 0.0, -60.0, seed=404)
+    lv = Level(40, 42, -31.0, 0.0, -60.0, seed=404)
     lv.carve(15, 1, 15, 1, 'E')              # elevator, bottom of the shaft
     lv.carve(15, 2, 15, 6, ',')
     lv.carve(10, 7, 20, 12, '.')             # where the Goat Man lies
@@ -352,10 +366,19 @@ def build_lower():
     lv.carve(18, 17, 27, 21, '.')            # east cavern
     lv.carve(10, 19, 17, 20, '.')            # passage between them
     lv.carve(15, 13, 15, 18, ',')            # a mineshaft shortcut
-    lv.carve(7, 22, 7, 25, ',')              # the old adit
-    lv.carve(7, 26, 7, 26, 'X')              # ...and out
+    lv.carve(22, 22, 23, 27, '.')            # north from the east cavern
+    lv.carve(12, 28, 34, 35, '.')            # the far cavern
+    for c, r in ((16, 31), (22, 33), (28, 30), (31, 34)):
+        lv.g[r][c] = '#'
+    lv.carve(5, 22, 5, 31, ',')              # mineshaft from the west cavern
+    lv.carve(6, 31, 11, 31, ',')
+    lv.carve(27, 11, 33, 12, '.')            # the long east tunnel
+    lv.carve(32, 13, 33, 27, '.')
+    lv.carve(35, 30, 37, 30, ',')            # a dead-end shaft to hide in
+    lv.carve(20, 36, 20, 39, ',')            # the old adit
+    lv.carve(20, 40, 20, 40, 'X')            # ...and out
     lv.elevator = (15, 1)
-    lv.exit = (7, 26)
+    lv.exit = (20, 40)
     lv.finish()
     lv.spawn = lv.center(15, 2)
     lv.safe = lv.center(15, 3)
@@ -368,8 +391,8 @@ def dress_upper(lv, b):
     lv.build_mesh(b)
     y0 = lv.y0
     lv.add_lever(b, 1, 20, 'W')             # west cavern
-    lv.add_lever(b, 28, 14, 'E')            # east cavern
-    lv.add_lever(b, 15, 26, 'N')            # crystal cavern
+    lv.add_lever(b, 43, 9, 'E')             # deep east cavern
+    lv.add_lever(b, 8, 39, 'N')             # the great hall
     # crystal cavern: pale glowing crystals, the only light before the generator runs
     for _ in range(26):
         c, r = rng.randint(9, 21), rng.randint(22, 26)
@@ -405,7 +428,8 @@ def dress_upper(lv, b):
         for sx in (-0.36, 0.36):
             b.cylinder(0.15, 0.15, 0.06, 8, L.BLACK, m=T(x + sx, y0 + 0.17, z + sz) @ RZ(math.pi / 2))
     # work lights strung through the caverns (dark until the generator runs)
-    for (c, r) in ((14, 7), (10, 9), (18, 6), (24, 14), (26, 16), (4, 20), (12, 24), (19, 24), (23, 8)):
+    for (c, r) in ((14, 7), (10, 9), (18, 6), (24, 14), (26, 16), (4, 20), (12, 24), (19, 24), (23, 8),
+                   (36, 9), (41, 17), (38, 29), (43, 32), (9, 33), (19, 35), (28, 38), (24, 31)):
         x, z = lv.center(c, r)
         lv.bulb(b, x, y0 + 4.0, z, float(lv.ceil[r, c]), rad=11.0)
     # bones and old clothes the Elk dragged in, near the mouth
@@ -435,7 +459,8 @@ def dress_lower(lv, b):
         m = T(gx + rng.uniform(-2.5, 2.5), y0 + 0.05, gz + rng.uniform(-2.5, 2.5)) @ RY(rng.random() * 6)
         b.box((0, 0, 0), (rng.uniform(0.15, 0.6), 0.06, 0.06), L.BONE, (0.85, 0.75, 0.7), m=m)
     # a few work lights still burning down here, and the grey light at the end of the adit
-    for (c, r) in ((15, 4), (12, 9), (18, 11), (6, 10), (5, 18), (14, 20), (22, 19), (26, 13)):
+    for (c, r) in ((15, 4), (12, 9), (18, 11), (6, 10), (5, 18), (14, 20), (22, 19), (26, 13),
+                   (23, 25), (15, 30), (27, 33), (33, 29), (30, 12), (33, 20), (20, 38), (5, 27)):
         x, z = lv.center(c, r)
         lv.bulb(b, x, y0 + (1.95 if lv.kind(c, r) == ',' else 4.0), z, float(lv.ceil[r, c]), rad=9.0)
     ex, ez = lv.center(*lv.exit)
@@ -562,10 +587,16 @@ class ElkHunter:
     """Hunts the caverns by LIGHT and MOVEMENT, like the Goat Man -- but it
     cannot fit into the timbered mineshafts. Hide in one and it waits at the
     opening, staring in, before it gives up and goes."""
-    LIGHT_RANGE = 30.0
-    RUN_RANGE = 20.0
-    WALK_RANGE = 12.0
-    CREEP_RANGE = 5.0
+    # it sees a long way, even in the dark, even when you hold still --
+    # but it is slow: you can always out-walk it to a mineshaft
+    LIGHT_RANGE = 60.0
+    RUN_RANGE = 48.0
+    WALK_RANGE = 40.0
+    CREEP_RANGE = 32.0
+    STILL_RANGE = 26.0
+    CHASE_SPEED = 2.45
+    SPEEDS = {'enter': 2.4, 'investigate': 2.2, 'leave': 2.0, 'roam': 1.8}
+    KILL_DIST = 1.9
 
     def __init__(self, lv, x, z):
         self.lv = lv
@@ -624,7 +655,7 @@ class ElkHunter:
         if lantern_on:
             reach, wide = self.LIGHT_RANGE, True
         elif not moving:
-            reach, wide = 0.0, False
+            reach, wide = self.STILL_RANGE, False
         elif player.crouch > 0.5:
             reach, wide = self.CREEP_RANGE, False
         elif getattr(player, 'sprinting', False):
@@ -632,6 +663,9 @@ class ElkHunter:
         else:
             reach, wide = self.WALK_RANGE, False
         self.sense_t -= dt
+        in_shaft = not lv.open_cell(*lv.cell_of(px, pz), elk=True)
+        if in_shaft and self.STILL_RANGE > 0:
+            reach = 0.0          # it knows it can't get you in there
         if self.sense_t <= 0 and self.grace <= 0 and self.state != 'enter':
             self.sense_t = 0.15
             fx, fz = math.sin(self.yaw), math.cos(self.yaw)
@@ -649,12 +683,12 @@ class ElkHunter:
         pc = lv.cell_of(px, pz)
         hidden = not lv.open_cell(*pc, elk=True)       # you are in a mineshaft it can't fit into
         if st == 'enter':
-            speed = 2.6
+            speed = self.SPEEDS['enter']
             if not self.path:
                 self.state = 'roam'
                 self.timer = 2.0
         elif st == 'chase':
-            speed = 4.2
+            speed = self.CHASE_SPEED
             self.seen_t += dt
             if hidden:
                 # it can't follow you in: go to the opening and stare in
@@ -683,7 +717,7 @@ class ElkHunter:
                     self.search_yaw = math.atan2(self.last_seen[0] - self.x, self.last_seen[1] - self.z) \
                         if self.last_seen else self.yaw
                     self.events.append('lost')
-                if dist < 1.9 and self.seen_t < 0.6:
+                if dist < self.KILL_DIST and self.seen_t < 0.6:
                     self.events.append('kill')
         elif st == 'search':
             self.timer += dt
@@ -698,7 +732,7 @@ class ElkHunter:
                 self.state = 'leave'
                 self.events.append('leave')
         elif st == 'investigate':
-            speed = 3.0
+            speed = self.SPEEDS['investigate']
             if not self.path:
                 speed = 0.0
                 self.timer += dt
@@ -707,12 +741,12 @@ class ElkHunter:
                     self.state = 'roam'
                     self.timer = 1.0
         elif st == 'leave':
-            speed = 2.4
+            speed = self.SPEEDS['leave']
             if not self.path:
                 self.state = 'roam'
                 self.timer = self.rng.uniform(6, 11)
         else:   # roam
-            speed = 2.0
+            speed = self.SPEEDS['roam']
             if not self.path:
                 speed = 0.0
                 self.timer -= dt
