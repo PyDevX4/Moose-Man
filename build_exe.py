@@ -44,11 +44,10 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "A new ending. Climb the ladder and keep going.",
-    "Out of a manhole into the eastern woods. Route 9 is just ahead.",
-    "He climbs out behind you. Don't stop walking.",
-    "Something bigger lives in Hollins Woods. Chapter Two is coming.",
-    "(F9 skips straight to the climb out of the ladder shaft.)",
+    "Blood sprays when he's being eaten, and when the car hits.",
+    "It arcs, falls and pools on the road.",
+    "When they go down they land flat on their backs, limbs bent naturally.",
+    "No more somersault off the car.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

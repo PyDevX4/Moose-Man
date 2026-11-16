@@ -23,6 +23,7 @@ def moose_meshes():
         'flesh': unit_cube(L.SKIN, (0.5, 0.45, 0.42)),
         'gore': unit_cube(L.SKIN, (0.24, 0.035, 0.03)),
         'rib': unit_cube(L.BONE, (0.58, 0.53, 0.44)),
+        'blood': unit_cube(L.SKIN, (0.5, 0.035, 0.025)),
         # the Goat Man
         'gfur': unit_cube(L.FUR, (0.62, 0.6, 0.58)),
         'gdark': unit_cube(L.FUR, (0.32, 0.3, 0.3)),
@@ -82,7 +83,7 @@ def herd_head_mesh():
 
 
 def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_yaw=0.0,
-               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0, tilt=0.0):
+               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0, tilt=0.0, lie=0.0):
     """Build the Moose Man as a list of (mesh_key, matrix).
 
     Tall, starved and wrong: bare pale shins and forearms, ribs and spine
@@ -92,15 +93,22 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
     """
     parts = []
     add = parts.append
-    M0 = T(x, y, z) @ RY(yaw) @ RX(tilt) @ S(scale)    # tilt -pi/2: flat on his back
+    # lie: 0 standing .. 1 flat on his back (topples backwards about the feet,
+    # every joint easing into a natural resting angle on the way down)
+    up = 1.0 - lie
+    M0 = T(x, y + 0.19 * lie, z) @ RY(yaw) @ RX(tilt - math.pi / 2 * lie) @ S(scale)
+    hunch = hunch * up
     H = 1.55
     # ---------------------------------------------------------- legs (reverse knees)
     for side in (-1, 1):
         ph = walk_phase + (0.0 if side < 0 else math.pi)
         swing = math.sin(ph) * 0.55 * walk_amt
-        hip = M0 @ T(side * 0.13, H, -0.02) @ RX(-0.35 - swing)
+        # lying: right knee drawn up, left leg nearly flat with a soft bend
+        hip_a = (-0.35 - swing) * up + (-0.95 if side > 0 else -0.3) * lie
+        knee_a = (0.85 + 0.4 * walk_amt * max(0.0, math.cos(ph))) * up + (1.85 if side > 0 else 0.7) * lie
+        hip = M0 @ T(side * 0.13, H, -0.02) @ RX(hip_a) @ RZ(side * 0.12 * lie)
         add(('fur', hip @ T(0, -0.39, 0) @ S(0.11, 0.8, 0.12)))
-        knee = hip @ T(0, -0.78, 0) @ RX(0.85 + 0.4 * walk_amt * max(0.0, math.cos(ph)))
+        knee = hip @ T(0, -0.78, 0) @ RX(knee_a)
         add(('fur', knee @ T(0, -0.02, 0) @ S(0.1, 0.12, 0.1)))
         add(('flesh', knee @ T(0, -0.41, 0) @ S(0.072, 0.82, 0.072)))
         ankle = knee @ T(0, -0.82, 0) @ RX(-0.5)
@@ -135,9 +143,11 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
     for side in (-1, 1):
         ph = walk_phase + (math.pi if side < 0 else 0.0)
         aswing = math.sin(ph) * 0.22 * walk_amt
-        sh = torso @ T(side * 0.25, 0.92, 0) @ RX(-hunch - aswing - reach) @ RZ(side * 0.12)
+        # lying: arms fall out to the sides on the ground, elbows bent back in
+        sh = torso @ T(side * 0.25, 0.92, 0) @ RX((-hunch - aswing - reach) * up - reach * 0.35 * lie) \
+            @ RZ(side * (0.12 * up + 0.7 * lie))
         add(('fur', sh @ T(0, -0.43, 0) @ S(0.085, 0.86, 0.085)))
-        el = sh @ T(0, -0.86, 0) @ RX(-0.3 - 0.2 * walk_amt - reach * 0.3)
+        el = sh @ T(0, -0.86, 0) @ RX((-0.3 - 0.2 * walk_amt - reach * 0.3) * up) @ RZ(-side * 1.0 * lie)
         add(('fur', el @ T(0, -0.05, 0) @ S(0.1, 0.15, 0.1)))
         add(('flesh', el @ T(0, -0.45, 0) @ S(0.062, 0.9, 0.062)))
         hand = el @ T(0, -0.9, 0)
@@ -149,7 +159,7 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
             add(('flesh', j2 @ T(0, -0.1, 0) @ S(0.018, 0.2, 0.018)))
             add(('black', j2 @ T(0, -0.23, 0.004) @ S(0.016, 0.07, 0.012)))
     # ---------------------------------------------------------- raw neck
-    neck = torso @ T(0, 1.0, 0.05) @ RX(0.7)
+    neck = torso @ T(0, 1.0, 0.05) @ RX(0.7 * up)
     add(('flesh', neck @ T(0, 0.22, 0) @ S(0.11, 0.48, 0.11)))
     add(('fur', neck @ T(0, 0.2, -0.05) @ S(0.15, 0.42, 0.06)))
     for k in range(7):
@@ -157,7 +167,7 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
         add(('gore', neck @ T(math.cos(a) * 0.075, 0.44, math.sin(a) * 0.075) @ RY(-a) @ RZ(0.5) @ S(0.05, 0.11, 0.02)))
     # ---------------------------------------------------------- the skull
     # the skull hangs snout-down, the way a dead head would
-    head = neck @ T(0, 0.46, 0) @ RX(-(hunch + 0.7) + 0.5 + head_pitch) @ RY(head_yaw) @ RZ(roll)
+    head = neck @ T(0, 0.46, 0) @ RX((-(hunch + 0.7) + 0.5) * up + head_pitch) @ RY(head_yaw) @ RZ(roll)
     add(('bone', head @ T(0, 0.1, 0) @ S(0.3, 0.28, 0.34)))
     add(('bone', head @ T(0, 0.2, 0.12) @ S(0.32, 0.06, 0.1)))
     snout = head @ T(0, 0.02, 0.32) @ RX(0.3)
@@ -208,7 +218,7 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
 
 
 def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0, head_pitch=0.0,
-              head_yaw=0.0, roll=0.0, jaw=0.0, arms=0.0, tilt=0.0, bloody=False, t=0.0):
+              head_yaw=0.0, roll=0.0, jaw=0.0, arms=0.0, tilt=0.0, bloody=False, t=0.0, lie=0.0):
     """The Goat Man: bigger than the Moose Man and built like a bull.
 
     Shaggy grey-black fur, goat legs on hooves, a massive humped chest, long
@@ -217,14 +227,20 @@ def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0
     """
     parts = []
     add = parts.append
-    M0 = T(x, y, z) @ RY(yaw) @ RX(tilt)
+    # lie: 0 standing .. 1 flat on his back with knees and elbows bent naturally
+    up = 1.0 - lie
+    M0 = T(x, y + 0.36 * lie, z) @ RY(yaw) @ RX(tilt - math.pi / 2 * lie)
+    hunch = hunch * up
+    crouch = crouch * up
     H = 1.75 * (1.0 - 0.42 * crouch)
     for side in (-1, 1):
         ph = walk_phase + (0.0 if side < 0 else math.pi)
         swing = math.sin(ph) * 0.6 * walk_amt
-        hip = M0 @ T(side * 0.24, H, 0) @ RX(-0.45 - 0.95 * crouch - swing)
+        hip_a = (-0.45 - 0.95 * crouch - swing) * up + (-1.0 if side < 0 else -0.35) * lie
+        knee_a = (1.1 + 1.05 * crouch + 0.45 * walk_amt * max(0.0, math.cos(ph))) * up + (1.9 if side < 0 else 0.8) * lie
+        hip = M0 @ T(side * 0.24, H, 0) @ RX(hip_a) @ RZ(side * 0.15 * lie)
         add(('gfur', hip @ T(0, -0.45, 0) @ S(0.25, 0.92, 0.28)))
-        knee = hip @ T(0, -0.9, 0) @ RX(1.1 + 1.05 * crouch + 0.45 * walk_amt * max(0.0, math.cos(ph)))
+        knee = hip @ T(0, -0.9, 0) @ RX(knee_a)
         add(('gfur', knee @ T(0, -0.42, 0) @ S(0.15, 0.86, 0.16)))
         ankle = knee @ T(0, -0.85, 0) @ RX(-0.65 - 0.15 * crouch)
         add(('gdark', ankle @ T(0, -0.16, 0) @ S(0.1, 0.32, 0.1)))
@@ -244,9 +260,9 @@ def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0
     for side in (-1, 1):
         ph = walk_phase + (math.pi if side < 0 else 0.0)
         aswing = math.sin(ph) * 0.3 * walk_amt
-        sh = torso @ T(side * 0.46, 1.05, 0) @ RX(-hunch - aswing - arms * 1.2) @ RZ(side * 0.2)
+        sh = torso @ T(side * 0.46, 1.05, 0) @ RX((-hunch - aswing - arms * 1.2) * up) @ RZ(side * (0.2 * up + 0.75 * lie))
         add(('gfur', sh @ T(0, -0.4, 0) @ S(0.21, 0.82, 0.21)))
-        el = sh @ T(0, -0.8, 0) @ RX(-0.35 - arms * 0.45)
+        el = sh @ T(0, -0.8, 0) @ RX((-0.35 - arms * 0.45) * up) @ RZ(-side * 1.05 * lie)
         add(('gfur', el @ T(0, -0.42, 0) @ S(0.17, 0.86, 0.17)))
         hand = el @ T(0, -0.86, 0)
         add(('skin', hand @ T(0, -0.08, 0) @ S(0.17, 0.17, 0.08)))
@@ -255,9 +271,9 @@ def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0
             add(('black', cm @ S(0.03, 0.3, 0.03)))
             if bloody:
                 add(('gore', cm @ T(0, 0.06, 0) @ S(0.034, 0.12, 0.034)))
-    neck = torso @ T(0, 1.22, 0.16) @ RX(0.5)
+    neck = torso @ T(0, 1.22, 0.16) @ RX(0.5 * up)
     add(('gfur', neck @ T(0, 0.15, 0) @ S(0.32, 0.42, 0.32)))
-    head = neck @ T(0, 0.36, 0.05) @ RX(-(hunch + 0.5) + 0.3 + head_pitch) @ RY(head_yaw) @ RZ(roll)
+    head = neck @ T(0, 0.36, 0.05) @ RX((-(hunch + 0.5) + 0.3) * up + head_pitch) @ RY(head_yaw) @ RZ(roll)
     add(('gfur', head @ T(0, 0.12, 0) @ S(0.33, 0.31, 0.35)))
     face = head @ T(0, 0.06, 0.16) @ RX(0.8)
     add(('gdark', face @ T(0, 0.0, 0.25) @ S(0.22, 0.21, 0.52)))

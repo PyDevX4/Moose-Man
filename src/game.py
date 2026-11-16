@@ -332,6 +332,7 @@ class Game:
         self.cars = []
         self.cs_t = 0.0
         self.cs_fired = set()
+        self.blood = []
         self.world.x_limit = 54.0
 
     def respawn(self):
@@ -887,6 +888,7 @@ class Game:
         self.cs_fired = set()
         self.cs_P = (W.ROAD_X0 - 0.3, clamp(p.z, W.ESCAPE_Z[0] + 2, W.ESCAPE_Z[1] - 2))
         self.cs_yaw0 = p.yaw
+        self.blood = []
         self.cars = []
         self.msgs = []
         self.obj_t = 0.0
@@ -899,13 +901,62 @@ class Game:
             return True
         return False
 
+    def spawn_blood(self, x, y, z, n, vel=(0.0, 2.5, 0.0), spread=1.5, size=(0.025, 0.06)):
+        """A spurt of blood droplets: [x, y, z, vx, vy, vz, size, stuck, pool_lift]."""
+        for _ in range(n):
+            self.blood.append([x + random.uniform(-0.08, 0.08), y, z + random.uniform(-0.08, 0.08),
+                               vel[0] + random.uniform(-spread, spread),
+                               vel[1] + random.uniform(-spread * 0.4, spread),
+                               vel[2] + random.uniform(-spread, spread),
+                               random.uniform(*size), False, random.uniform(0, 0.004)])
+        if len(self.blood) > 420:
+            # keep every pool on the ground; drop the oldest airborne drops first
+            self.blood = self.blood[-420:]
+
+    def update_blood(self, dt):
+        for b in self.blood:
+            if b[7]:
+                continue
+            b[4] -= 9.8 * dt
+            b[0] += b[3] * dt
+            b[1] += b[4] * dt
+            b[2] += b[5] * dt
+            if b[1] <= 0.04:
+                b[1] = 0.04
+                b[7] = True
+
     def update_cutscene(self, dt):
         t = self.cs_t = self.cs_t + dt
         A = self.audio
         F = self.cs_fight_point()
         P = self.cs_P
-        cam = self.cs_frame()['cam']
-        A.set_listener(cam[0], cam[2], self.cs_frame()['yaw'])
+        fr = self.cs_frame()
+        cam = fr['cam']
+        A.set_listener(cam[0], cam[2], fr['yaw'])
+        # ---- blood
+        self.update_blood(dt)
+        Ex, Ez = self.cs_feed_point()
+        if self.cs_fire('b_tackle', 4.75):
+            self.spawn_blood(Ex + 1.0, 1.2, Ez + 0.3, 14, vel=(-1.5, 2.0, -0.5), spread=1.6)
+        if 6.3 < t < 10.4:
+            # every bite tears another spurt out of his chest, plus a steady drizzle
+            if random.random() < dt * 9:
+                self.spawn_blood(Ex, 0.45, Ez, 2, vel=(0.0, 1.8, -0.4), spread=1.0)
+        for i in range(14):
+            if self.cs_fire('b_eat%d' % i, 6.45 + i * 0.3):
+                self.spawn_blood(Ex, 0.5, Ez - 0.1, 11, vel=(0.0, 3.2, -0.9), spread=1.5)
+        g = fr.get('goat_root')
+        if g:
+            if self.cs_fire('b_hit', 17.8):
+                # the car is southbound: everything goes down the road
+                self.spawn_blood(g[0], 1.5, g[2], 55, vel=(0.4, 3.0, -8.5), spread=2.2, size=(0.03, 0.08))
+            if 17.8 < t < 18.6 and random.random() < dt * 40:
+                self.spawn_blood(g[0], g[1] + 1.2, g[2], 2, vel=(0.0, 0.8, -4.0), spread=1.0)
+            if 18.6 < t < 21.0 and random.random() < dt * 3:
+                self.spawn_blood(g[0], 0.5, g[2] - 1.5, 2, vel=(0.0, 0.9, 0.0), spread=0.6)
+            if 21.0 < t < 26.0 and random.random() < dt * 4:
+                # drips as he gets up and runs
+                self.spawn_blood(g[0], 1.3, g[2], 1, vel=(0.0, -0.5, 0.0), spread=0.2)
         if self.cs_fire('turn', 0.75):
             A.play('stinger', 1.0)
             A.play('call_near', 0.9)
@@ -990,21 +1041,25 @@ class Game:
         roll = 0.55 * sm(2.2, 3.3) + (0.15 * math.sin(t * 23) if t > 3.3 else 0.0)
         mx += 0.3 * sm(3.4, 4.5)
         head_pitch = -0.55 * sm(1.0, 1.8)
-        m_tilt = 0.0
+        m_lie = 0.0
+        m_hyaw = 0.0
         my = gnd
         if t >= 4.6:
-            # tackled: thrown south-west and slammed onto his back
+            # tackled: knocked off his feet and slammed flat on his back,
+            # limbs settling into a natural bend, head lolling to one side
             k = sm(4.6, 5.15)
             mx = lerp(mx, Fx, k)
             mz = lerp(mz, Fz, k)
-            my = gnd + 0.25 * k + 0.8 * math.sin(math.pi * k)
-            m_tilt = -1.45 * k
-            reach = 0.9 + (0.6 * math.sin(t * 17) if t < 10.5 else 0.0)
-            jaw = 1.0 if t < 10.5 else 0.2
-            roll = (random.uniform(-0.5, 0.5) if t < 9.5 else 0.0)
-            head_pitch = -0.3
+            my = gnd + 0.6 * math.sin(math.pi * k)
+            m_lie = k
+            twitch = (0.25 * math.sin(t * 17) if t < 10.5 else 0.0)
+            reach = 0.15 + twitch
+            jaw = (0.7 + 0.3 * math.sin(t * 9)) if t < 10.5 else 0.45
+            roll = (random.uniform(-0.25, 0.25) if 6.0 < t < 9.5 else 0.0)
+            head_pitch = 0.0
+            m_hyaw = 0.75 * k
         moose = pose_moose(mx, my, mz, m_yaw, 0.0, 0.0, hunch=0.55, roll=roll, head_pitch=head_pitch,
-                           reach=reach, jaw=jaw, t=self.time, tilt=m_tilt)
+                           head_yaw=m_hyaw, reach=reach, jaw=jaw, t=self.time, lie=m_lie)
         out['parts'].append(moose[0])
         head_m = moose[1]
         mhead = (float(head_m[0, 3]), float(head_m[1, 3]), float(head_m[2, 3]))
@@ -1041,26 +1096,31 @@ class Game:
                 goat = dict(x=gx, z=gz, yaw=math.atan2(W.ROAD_X1 + 2.5 - gx, P[1] - gz), phase=t * 5, amt=0.9,
                             hunch=0.5, arms=0.25, bloody=True)
             elif t < 21.0:
-                # hit: flung down the road, rolls, lies still
-                k = sm(17.8, 18.75)
-                gx = lane + 0.6 * k
-                gz = P[1] - 10.0 * k
-                gy = 2.0 * math.sin(math.pi * min(1.0, (t - 17.8) / 0.95)) if t < 18.75 else 0.0
-                tilt = (math.pi * 2.6 * k) if t < 18.75 else (math.pi / 2)
-                goat = dict(x=gx, z=gz, y=gy, yaw=0.3, tilt=tilt, arms=0.6, bloody=True, hunch=0.3)
+                # hit: knocked down the road and onto his back -- no somersault,
+                # he twists to face where he came from and goes over backwards
+                k = sm(17.8, 18.6)
+                walk_yaw = math.atan2(W.ROAD_X1 + 2.5 - lane, 0.0)
+                gx = lane + 0.5 * k
+                gz = P[1] - 7.0 * k
+                gy = 0.7 * math.sin(math.pi * min(1.0, (t - 17.8) / 0.8)) if t < 18.6 else 0.0
+                lie = sm(17.85, 18.55)
+                twitch = 0.2 * math.sin(t * 15) if 18.6 < t < 19.6 else 0.0
+                goat = dict(x=gx, z=gz, y=gy, yaw=lerp(walk_yaw, 0.0, k), lie=lie, arms=0.3 + twitch,
+                            bloody=True, hunch=0.3, head_yaw=0.6 * lie)
             elif t < 23.0:
                 # gets up, jerkily, and stares at you
                 k = sm(21.0, 22.3)
                 k = math.floor(k * 6) / 6.0
-                gx, gz = lane + 0.6, P[1] - 10.0
+                gx, gz = lane + 0.5, P[1] - 7.0
                 look = math.atan2(W.ROAD_X1 + 2.5 - gx, P[1] - gz)
-                goat = dict(x=gx, z=gz, yaw=lerp(0.3, look, sm(22.0, 22.6)), tilt=math.pi / 2 * (1 - k),
-                            crouch=0.8 * (1 - k), hunch=0.5, arms=0.4 * (1 - k), bloody=True, roll=0.4 * sm(22.2, 22.9))
+                goat = dict(x=gx, z=gz, yaw=lerp(0.0, look, sm(22.0, 22.6)), lie=1.0 - k,
+                            crouch=0.8 * (1 - k), hunch=0.5, arms=0.4 * (1 - k), bloody=True,
+                            head_yaw=0.6 * (1 - k), roll=0.4 * sm(22.2, 22.9))
             elif t < 26.0:
                 # and runs off into the trees
                 k = (t - 23.0) / 3.0
-                gx = lane + 0.6 - 18.0 * k
-                gz = P[1] - 10.0 - 4.0 * k
+                gx = lane + 0.5 - 18.0 * k
+                gz = P[1] - 7.0 - 4.0 * k
                 goat = dict(x=gx, z=gz, yaw=math.atan2(-18.0, -4.0), phase=t * 13, amt=1.0, hunch=0.85, arms=0.3, bloody=True)
         if goat:
             gy = goat.pop('y', float(W.terrain_h(goat['x'], goat['z'])))
@@ -1071,6 +1131,18 @@ class Game:
                 goat['walk_amt'] = goat.pop('amt')
             out['parts'].append(pose_goat(gx, gy, gz, gyaw, t=self.time, **goat)[0])
             out['goat'] = (gx, gy + 2.6, gz)
+            out['goat_root'] = (gx, gy, gz)
+        # ---- blood
+        if self.blood:
+            bp = []
+            for b in self.blood:
+                if b[7]:
+                    s = b[6] * 2.4
+                    bp.append(('blood', T(b[0], 0.035 + b[8], b[2]) @ S(s, 0.006, s * 0.8)))
+                else:
+                    s = b[6]
+                    bp.append(('blood', T(b[0], b[1], b[2]) @ S(s, s * 1.6, s)))
+            out['parts'].append(bp)
         # ---- spill from the dropped flashlight, so you can see what he is doing
         if 4.6 <= t < 14.5:
             out['lights'].append(((Ex + 1.2, 1.4, Ez + 0.8), 8.0, (0.75, 0.7, 0.6)))
