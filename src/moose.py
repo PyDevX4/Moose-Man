@@ -16,10 +16,15 @@ def unit_cube(layer, col=(1, 1, 1)):
 def moose_meshes():
     return {
         'fur': unit_cube(L.FUR),
-        'bone': unit_cube(L.BONE, (0.95, 0.92, 0.85)),
+        'bone': unit_cube(L.BONE, (0.74, 0.7, 0.62)),
         'black': unit_cube(L.BLACK),
         'eye': unit_cube(L.GLOW + EMIS, (0.9, 0.85, 0.6)),
         'skin': unit_cube(L.SKIN, (0.35, 0.3, 0.3)),
+        'flesh': unit_cube(L.SKIN, (0.5, 0.45, 0.42)),
+        'gore': unit_cube(L.SKIN, (0.24, 0.035, 0.03)),
+        'rib': unit_cube(L.BONE, (0.58, 0.53, 0.44)),
+        'teeth': unit_cube(L.BONE, (0.8, 0.68, 0.42)),
+        'eyewhite': unit_cube(L.GLOW + EMIS, (0.62, 0.6, 0.52)),
     }
 
 
@@ -65,60 +70,128 @@ def herd_head_mesh():
 
 
 def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_yaw=0.0,
-               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0):
+               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0):
+    """Build the Moose Man as a list of (mesh_key, matrix).
+
+    Tall, starved and wrong: bare pale shins and forearms, ribs and spine
+    through torn hide, hands that reach the floor, a skull fused onto a raw
+    neck, human eyes in the sockets looking two different ways, and one
+    antler snapped off with skin peeling from both.
+    """
     parts = []
     add = parts.append
     M0 = T(x, y, z) @ RY(yaw) @ S(scale)
-    H = 1.42
+    H = 1.55
+    # ---------------------------------------------------------- legs (reverse knees)
     for side in (-1, 1):
         ph = walk_phase + (0.0 if side < 0 else math.pi)
         swing = math.sin(ph) * 0.55 * walk_amt
-        hip = M0 @ T(side * 0.15, H, 0) @ RX(-0.3 - swing)
-        add(('fur', hip @ T(0, -0.35, 0) @ S(0.14, 0.74, 0.15)))
-        knee = hip @ T(0, -0.7, 0) @ RX(0.75 + 0.4 * walk_amt * max(0.0, math.cos(ph)))
-        add(('fur', knee @ T(0, -0.37, 0) @ S(0.1, 0.76, 0.1)))
-        ankle = knee @ T(0, -0.74, 0) @ RX(-0.45)
-        add(('black', ankle @ T(0, -0.06, 0.04) @ S(0.13, 0.14, 0.2)))
+        hip = M0 @ T(side * 0.13, H, -0.02) @ RX(-0.35 - swing)
+        add(('fur', hip @ T(0, -0.39, 0) @ S(0.11, 0.8, 0.12)))
+        knee = hip @ T(0, -0.78, 0) @ RX(0.85 + 0.4 * walk_amt * max(0.0, math.cos(ph)))
+        add(('fur', knee @ T(0, -0.02, 0) @ S(0.1, 0.12, 0.1)))
+        add(('flesh', knee @ T(0, -0.41, 0) @ S(0.072, 0.82, 0.072)))
+        ankle = knee @ T(0, -0.82, 0) @ RX(-0.5)
+        add(('fur', ankle @ T(0, 0.05, 0) @ S(0.12, 0.12, 0.12)))
+        add(('black', ankle @ T(0, -0.06, 0.05) @ S(0.11, 0.13, 0.2)))
+    # ---------------------------------------------------------- starved torso
     torso = M0 @ T(0, H, 0) @ RX(hunch)
-    add(('fur', torso @ T(0, 0.47, 0) @ S(0.42, 0.95, 0.26)))
-    add(('fur', torso @ T(0, 0.02, 0) @ S(0.36, 0.2, 0.24)))
-    for k in range(5):
-        add(('bone', torso @ T(0, 0.42 + k * 0.1, 0.135) @ S(0.38 - k * 0.02, 0.025, 0.03)))
+    add(('fur', torso @ T(0, 0.03, 0) @ S(0.3, 0.18, 0.22)))
+    add(('flesh', torso @ T(0, 0.28, 0) @ S(0.19, 0.36, 0.15)))
+    add(('fur', torso @ T(0, 0.73, 0) @ S(0.4, 0.56, 0.27)))
+    # torn open down the chest: dark wet patches behind the ribs, not a tidy square
+    for gx_, gy_, gw, gh in ((0.05, 0.62, 0.12, 0.2), (-0.04, 0.72, 0.09, 0.14), (0.08, 0.8, 0.07, 0.09), (0.0, 0.52, 0.06, 0.1)):
+        add(('gore', torso @ T(gx_, gy_, 0.137) @ RZ(gx_ * 3) @ S(gw, gh, 0.01)))
     for k in range(6):
-        add(('bone', torso @ T(0, 0.15 + k * 0.15, -0.14) @ S(0.05, 0.06, 0.05)))
+        w = 0.34 - 0.03 * abs(k - 2.5)
+        add(('rib', torso @ T(0, 0.5 + k * 0.08, 0.145) @ RZ(0.04 * (k - 2.5)) @ S(w, 0.016, 0.025)))
+    for side in (-1, 1):
+        for k in range(5):
+            add(('rib', torso @ T(side * 0.2, 0.52 + k * 0.09, 0.02) @ RY(side * 0.3) @ S(0.016, 0.018, 0.25)))
+        add(('bone', torso @ T(side * 0.12, 0.88, -0.135) @ RX(0.2) @ S(0.14, 0.2, 0.03)))
+    for k in range(9):
+        add(('bone', torso @ T(0, 0.08 + k * 0.11, -0.15 + 0.02 * math.sin(k)) @ S(0.06, 0.07, 0.07)))
+    # strips of hide hanging off the back, swaying
+    for i in range(7):
+        px = -0.18 + i * 0.06
+        ln = 0.32 + 0.12 * (i % 3)
+        sway = 0.15 * math.sin(t * 1.7 + i * 1.3) + 0.25 * walk_amt * math.sin(walk_phase + i)
+        m = torso @ T(px, 0.98 - (i % 3) * 0.14, -0.13) @ RX(-hunch * 0.9 + sway) @ RZ((i - 3) * 0.06)
+        add(('fur' if i % 3 else 'gore', m @ T(0, -ln / 2, 0) @ S(0.05, ln, 0.012)))
+    # ---------------------------------------------------------- arms that reach the floor
+    curl = 0.2 + 0.35 * reach
     for side in (-1, 1):
         ph = walk_phase + (math.pi if side < 0 else 0.0)
-        aswing = math.sin(ph) * 0.25 * walk_amt
-        sh = torso @ T(side * 0.27, 0.9, 0) @ RX(-hunch - aswing - reach) @ RZ(side * 0.1)
-        add(('fur', sh @ T(0, -0.36, 0) @ S(0.1, 0.74, 0.1)))
-        el = sh @ T(0, -0.72, 0) @ RX(-0.25 - 0.2 * walk_amt - reach * 0.3)
-        add(('fur', el @ T(0, -0.4, 0) @ S(0.08, 0.8, 0.08)))
-        hand = el @ T(0, -0.8, 0)
-        add(('skin', hand @ T(0, -0.06, 0) @ S(0.12, 0.13, 0.05)))
-        for f in (-1, 0, 1):
-            fm = hand @ T(f * 0.04, -0.12, 0) @ RZ(f * 0.12) @ RX(-0.25) @ T(0, -0.17, 0)
-            add(('bone', fm @ S(0.025, 0.34, 0.025)))
-    neck = torso @ T(0, 0.95, 0.03) @ RX(0.55)
-    add(('fur', neck @ T(0, 0.16, 0) @ S(0.13, 0.36, 0.13)))
-    head = neck @ T(0, 0.32, 0) @ RX(-(hunch + 0.55) + head_pitch) @ RY(head_yaw) @ RZ(roll)
-    add(('bone', head @ T(0, 0.08, 0) @ S(0.28, 0.27, 0.32)))
-    add(('bone', head @ T(0, 0.0, 0.3) @ RX(0.28) @ S(0.19, 0.19, 0.5)))
-    add(('black', head @ T(0, -0.06, 0.53) @ RX(0.28) @ S(0.12, 0.07, 0.06)))
-    add(('bone', head @ T(0, -0.1, 0.12) @ RX(0.45 + jaw) @ T(0, 0, 0.2) @ S(0.15, 0.04, 0.4)))
-    for k in range(4):
-        add(('bone', head @ T(0, -0.1, 0.12) @ RX(0.45 + jaw) @ T(-0.045 + k * 0.03, 0.035, 0.25 + k * 0.02) @ S(0.015, 0.05, 0.015)))
+        aswing = math.sin(ph) * 0.22 * walk_amt
+        sh = torso @ T(side * 0.25, 0.92, 0) @ RX(-hunch - aswing - reach) @ RZ(side * 0.12)
+        add(('fur', sh @ T(0, -0.43, 0) @ S(0.085, 0.86, 0.085)))
+        el = sh @ T(0, -0.86, 0) @ RX(-0.3 - 0.2 * walk_amt - reach * 0.3)
+        add(('fur', el @ T(0, -0.05, 0) @ S(0.1, 0.15, 0.1)))
+        add(('flesh', el @ T(0, -0.45, 0) @ S(0.062, 0.9, 0.062)))
+        hand = el @ T(0, -0.9, 0)
+        add(('flesh', hand @ T(0, -0.07, 0) @ S(0.11, 0.14, 0.04)))
+        for f in (-1.5, -0.5, 0.5, 1.5):
+            base = hand @ T(f * 0.028, -0.14, 0) @ RZ(f * 0.08 * side) @ RX(-0.15 - curl)
+            add(('flesh', base @ T(0, -0.12, 0) @ S(0.022, 0.24, 0.022)))
+            j2 = base @ T(0, -0.24, 0) @ RX(-0.35 - curl)
+            add(('flesh', j2 @ T(0, -0.1, 0) @ S(0.018, 0.2, 0.018)))
+            add(('black', j2 @ T(0, -0.23, 0.004) @ S(0.016, 0.07, 0.012)))
+    # ---------------------------------------------------------- raw neck
+    neck = torso @ T(0, 1.0, 0.05) @ RX(0.7)
+    add(('flesh', neck @ T(0, 0.22, 0) @ S(0.11, 0.48, 0.11)))
+    add(('fur', neck @ T(0, 0.2, -0.05) @ S(0.15, 0.42, 0.06)))
+    for k in range(7):
+        a = k * 0.9
+        add(('gore', neck @ T(math.cos(a) * 0.075, 0.44, math.sin(a) * 0.075) @ RY(-a) @ RZ(0.5) @ S(0.05, 0.11, 0.02)))
+    # ---------------------------------------------------------- the skull
+    # the skull hangs snout-down, the way a dead head would
+    head = neck @ T(0, 0.46, 0) @ RX(-(hunch + 0.7) + 0.5 + head_pitch) @ RY(head_yaw) @ RZ(roll)
+    add(('bone', head @ T(0, 0.1, 0) @ S(0.3, 0.28, 0.34)))
+    add(('bone', head @ T(0, 0.2, 0.12) @ S(0.32, 0.06, 0.1)))
+    snout = head @ T(0, 0.02, 0.32) @ RX(0.3)
+    # long tapering snout: wide at the eyes, narrow at the tip
+    add(('bone', snout @ T(0, 0.0, -0.14) @ S(0.21, 0.2, 0.34)))
+    add(('bone', snout @ T(0, -0.01, 0.17) @ S(0.15, 0.16, 0.3)))
+    add(('black', snout @ T(0, 0.07, 0.17) @ S(0.08, 0.03, 0.24)))
+    add(('black', snout @ T(0, -0.02, 0.322) @ S(0.1, 0.09, 0.01)))
+    add(('gore', snout @ T(0, -0.05, 0.12) @ S(0.155, 0.06, 0.22)))
     for side in (-1, 1):
-        add(('black', head @ T(side * 0.13, 0.13, 0.1) @ S(0.07, 0.08, 0.09)))
-        add(('eye', head @ T(side * 0.16, 0.13, 0.12) @ S(0.025, 0.025, 0.025)))
-        base = head @ T(side * 0.12, 0.2, -0.03) @ RZ(-side * 1.1)
-        add(('bone', base @ T(0, 0.22, 0) @ S(0.06, 0.44, 0.06)))
-        palm = base @ T(0, 0.42, 0) @ RZ(side * 0.75)
-        add(('bone', palm @ T(0, 0.31, 0) @ S(0.045, 0.62, 0.44)))
-        for k in range(5):
-            tm = palm @ T(0, 0.6, -0.18 + k * 0.09) @ RX(-0.35 + k * 0.17) @ T(0, 0.11, 0)
-            add(('bone', tm @ S(0.03, 0.24, 0.03)))
-        tm = palm @ T(0, 0.1, 0.2) @ RX(0.9) @ T(0, 0.12, 0)
-        add(('bone', tm @ S(0.03, 0.25, 0.03)))
+        for k in range(6):
+            add(('teeth', snout @ T(side * (0.085 - k * 0.006), -0.1, -0.04 + k * 0.06) @ S(0.022, 0.06, 0.02)))
+    jaw_m = head @ T(0, -0.1, 0.14) @ RX(0.42 + jaw)
+    add(('bone', jaw_m @ T(0, 0, 0.26) @ S(0.16, 0.045, 0.52)))
+    for side in (-1, 1):
+        for k in range(6):
+            add(('teeth', jaw_m @ T(side * 0.062, 0.045, 0.08 + k * 0.06) @ S(0.02, 0.05, 0.02)))
+        add(('gore', jaw_m @ T(side * 0.05, -0.08, 0.3) @ S(0.015, 0.15, 0.015)))
+    # human eyes, each looking somewhere slightly different
+    for side in (-1, 1):
+        add(('black', head @ T(side * 0.135, 0.13, 0.11) @ S(0.08, 0.09, 0.1)))
+        add(('eyewhite', head @ T(side * 0.155, 0.13, 0.125) @ S(0.05, 0.05, 0.05)))
+        py = 0.012 if side > 0 else -0.01
+        pz = 0.0 if side > 0 else 0.014
+        add(('black', head @ T(side * 0.18, 0.13 + py, 0.13 + pz) @ S(0.008, 0.02, 0.02)))
+    # right antler: whole palm
+    base = head @ T(0.13, 0.22, -0.03) @ RZ(-1.05)
+    add(('bone', base @ T(0, 0.24, 0) @ S(0.065, 0.48, 0.065)))
+    # broad palm facing forward, so from the front it is a wide pale plate
+    palm = base @ T(0, 0.46, 0) @ RZ(0.75) @ RX(-0.25)
+    add(('bone', palm @ T(0.1, 0.32, 0) @ S(0.42, 0.64, 0.045)))
+    for k in range(6):
+        tm = palm @ T(-0.08 + k * 0.075, 0.62, 0) @ RZ(0.45 - k * 0.17) @ T(0, 0.12, 0)
+        add(('bone', tm @ S(0.03, 0.26, 0.03)))
+    add(('bone', palm @ T(0.32, 0.18, 0) @ RZ(-1.1) @ T(0, 0.12, 0) @ S(0.03, 0.25, 0.03)))
+    for k in range(3):
+        sw = 0.12 * math.sin(t * 2.1 + k)
+        add(('gore', palm @ T(-0.05 + k * 0.13, 0.08, 0.03) @ RX(sw) @ T(0, -0.15, 0) @ S(0.04, 0.3, 0.01)))
+    # left antler: snapped off, splintered
+    base = head @ T(-0.13, 0.22, -0.03) @ RZ(1.05)
+    add(('bone', base @ T(0, 0.22, 0) @ S(0.065, 0.44, 0.065)))
+    stub = base @ T(0, 0.43, 0) @ RZ(-0.5) @ RX(-0.25)
+    add(('bone', stub @ T(-0.04, 0.12, 0) @ S(0.26, 0.24, 0.045)))
+    for k, (az, ln) in enumerate(((0.3, 0.14), (-0.4, 0.1), (0.1, 0.18))):
+        add(('bone', stub @ T(-0.13 + k * 0.09, 0.24, 0) @ RZ(az) @ T(0, ln / 2, 0) @ S(0.02, ln, 0.02)))
+    add(('gore', stub @ T(0.0, 0.12, 0.03) @ RX(0.1 * math.sin(t * 1.9)) @ T(0, -0.2, 0) @ S(0.05, 0.4, 0.012)))
     return parts, head
 
 
@@ -154,6 +227,11 @@ class Moose:
         self.jaw = 0.0
         self.stuck_t = 0.0
         self.prev = (0.0, 0.0)
+        self.head_yaw_target = 0.0
+        self.anim_clock = 0.0
+        self.anim_acc = 0.0
+        self.anim_step = 0.1
+        self.snap = (0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.0)
         self.cells = None
 
     def place_cell(self, c, r):
@@ -355,10 +433,24 @@ class Moose:
             else:
                 self.roll_target = 0.0
             self.twitch_t = random.uniform(0.15, 1.8) if st != 'chase' else random.uniform(0.05, 0.4)
+            # the head also snaps sideways, like it heard its name
+            self.head_yaw_target = random.uniform(-0.6, 0.6) if random.random() < 0.35 else 0.0
         self.roll += (self.roll_target - self.roll) * min(1.0, dt * 25)
+        self.head_yaw += (self.head_yaw_target - self.head_yaw) * min(1.0, dt * 30)
         want_reach = 0.9 if st == 'chase' and dist < 6 else 0.0
         self.reach += (want_reach - self.reach) * min(1.0, dt * 4)
-        self.jaw = 0.25 + 0.2 * math.sin(self.walk_phase * 3) if st == 'chase' else 0.05
+        if st == 'chase':
+            self.jaw = 0.35 + 0.25 * abs(math.sin(self.walk_phase * 3))
+        else:
+            self.jaw = 0.05 + 0.5 * max(0.0, math.sin(self.anim_clock * 0.7) - 0.85) * 6
+        # ---- stop-motion: limbs and head only update a few times a second,
+        # at an uneven rate, while the body still glides. It reads as wrong.
+        self.anim_clock += dt
+        self.anim_acc += dt
+        if self.anim_acc >= self.anim_step:
+            self.anim_acc = 0.0
+            self.anim_step = random.uniform(0.06, 0.12) if st == 'chase' else random.uniform(0.08, 0.2)
+            self.snap = (self.walk_phase, self.walk_amt, self.roll, self.head_yaw, self.reach, self.jaw, self.anim_clock)
 
     @staticmethod
     def _turn(a, b, k):
@@ -375,5 +467,6 @@ class Moose:
 
     def parts(self):
         hunch = 0.45 if self.state != 'chase' else 0.75
-        return pose_moose(self.x, self.y, self.z, self.yaw, self.walk_phase, self.walk_amt,
-                          hunch=hunch, roll=self.roll, scale=self.ceiling_scale(), reach=self.reach, jaw=self.jaw)[0]
+        phase, amt, roll, hyaw, reach, jaw, clock = self.snap
+        return pose_moose(self.x, self.y, self.z, self.yaw, phase, amt, hunch=hunch, roll=roll,
+                          head_yaw=hyaw, scale=self.ceiling_scale(), reach=reach, jaw=jaw, t=clock)[0]

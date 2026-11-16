@@ -44,11 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Auto-updates: the game now keeps itself up to date.",
-    "Display Mode setting: Windowed Fullscreen (default, best for OBS),",
-    "Borderless, Fullscreen or Windowed.",
-    "The game no longer crashes on startup when no sound device is available.",
-    "Version number on the title screen, and a new icon.",
+    "He looks worse now.",
+    "Starved and taller. Bare pale limbs. Ribs and spine through torn hide.",
+    "Hands that reach the floor. A skull fused onto a raw, bloody neck.",
+    "Human eyes in the sockets -- they catch your flashlight in the dark.",
+    "One antler snapped off. He moves like stop-motion. The jumpscare stares back.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

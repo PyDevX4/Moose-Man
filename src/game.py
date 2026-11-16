@@ -1261,15 +1261,17 @@ class Game:
         self.draw_world(cam, fwd, flash, fpos, self.flash_dir, parts)
 
     def face_parts(self, cam, fwd, yaw, dist):
-        roll = random.uniform(-0.35, 0.35)
-        jaw = 0.6 + random.uniform(0, 0.3)
-        _, head = pose_moose(0, 0, 0, yaw + math.pi, 0.0, 0.0, hunch=0.45, roll=roll, jaw=jaw, reach=1.0)
-        hx, hy, hz = float(head[0, 3]), float(head[1, 3]) + 0.05, float(head[2, 3])
+        # skull lifted to stare straight at you, jaw hanging open, head twitching
+        roll = random.uniform(-0.3, 0.3)
+        jaw = 0.75 + random.uniform(0, 0.25)
+        pitch = -0.25 + random.uniform(-0.05, 0.05)
+        kw = dict(hunch=0.45, roll=roll, jaw=jaw, reach=1.0, head_pitch=pitch, t=self.time)
+        _, head = pose_moose(0, 0, 0, yaw + math.pi, 0.0, 0.0, **kw)
+        hx, hy, hz = float(head[0, 3]), float(head[1, 3]), float(head[2, 3])
         tx = cam[0] + math.sin(yaw) * dist
         tz = cam[2] + math.cos(yaw) * dist
-        ty = cam[1] - 0.05
-        return pose_moose(tx - hx, ty - hy, tz - hz, yaw + math.pi, 0.0, 0.0, hunch=0.45,
-                          roll=roll, jaw=jaw, reach=1.0)[0]
+        ty = cam[1] + 0.1
+        return pose_moose(tx - hx, ty - hy, tz - hz, yaw + math.pi, 0.0, 0.0, **kw)[0]
 
     def render_scare(self):
         p = self.player
@@ -1279,7 +1281,7 @@ class Game:
         cam = (cam[0] + random.uniform(-sh, sh), cam[1] + random.uniform(-sh, sh), cam[2])
         yaw = p.yaw + random.uniform(-0.03, 0.03)
         fwd = (math.sin(yaw), 0.0, math.cos(yaw))
-        parts = [self.face_parts(cam, fwd, yaw, 1.15 - min(k, 1.0) * 0.35)]
+        parts = [self.face_parts(cam, fwd, yaw, 1.75 - min(k, 1.0) * 0.45)]
         fpos = (cam[0], cam[1] - 0.25, cam[2])
         self.draw_world(cam, fwd, 0.55, fpos, fwd, parts)
 
