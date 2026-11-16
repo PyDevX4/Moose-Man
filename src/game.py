@@ -382,18 +382,6 @@ class Game:
             self.running = False
             return
         st = self.state
-        # F9: skip straight to climbing out of the ladder shaft
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_F9 and st in ('title', 'intro', 'play', 'pause', 'note', 'dead'):
-            self.audio.unpause()
-            self.new_game()
-            for v in self.world.valves:
-                v['done'] = True
-            self.valves_done = 5
-            self.world.drained = True
-            self.world.set_valves_done(5)
-            self.world.water_level = self.world.water_target
-            self.start_escape()
-            return
         if st == 'cutscene':
             return
         if ev.type in (pygame.WINDOWFOCUSLOST,) and st == 'play':

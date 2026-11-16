@@ -49,6 +49,7 @@ NOTES = "\n".join([
     "Massive ridged ram horns, jagged brow horns, spines through his hump.",
     "Ribs showing through his flanks. Long claws. Split hooves.",
     "He pins the Moose Man down while he eats now.",
+    "The F9 skip-to-the-ending shortcut has been removed.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
