@@ -457,7 +457,7 @@ class Renderer:
         self.depth = self.ctx.depth_renderbuffer((w, h))
         self.fbo = self.ctx.framebuffer([self.scene_tex], self.depth)
 
-    def begin(self, cam_pos, cam_fwd, fov, env, time, flash_on, flash_pos, flash_dir, lights, far=140.0):
+    def begin(self, cam_pos, cam_fwd, fov, env, time, flash_on, flash_pos, flash_dir, lights, far=140.0, up=(0.0, 1.0, 0.0)):
         ctx = self.ctx
         self.fbo.use()
         ctx.viewport = (0, 0, self.rw, self.rh)
@@ -467,7 +467,7 @@ class Renderer:
         ctx.disable(moderngl.CULL_FACE)
         p = self.prog
         proj = perspective(fov, self.rw / self.rh, 0.05, far)
-        view = view_matrix(cam_pos, cam_fwd)
+        view = view_matrix(cam_pos, cam_fwd, up)
         setm(p, 'u_proj', proj)
         setm(p, 'u_view', view)
         setm(p, 'u_model', IDENT)

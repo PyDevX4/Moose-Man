@@ -15,7 +15,7 @@ from engine import Renderer, Mesh, T, S, RX, RY, RZ
 from textures import make_textures, L
 import world as W
 from world import World, cell_of, cell_center, clamp
-from moose import Moose, pose_moose, moose_meshes, valve_mesh, wheel_mesh, herd_head_mesh
+from moose import Moose, pose_moose, pose_goat, car_parts, moose_meshes, valve_mesh, wheel_mesh, herd_head_mesh
 from audio import Audio
 import lore
 import updater
@@ -325,8 +325,19 @@ class Game:
         self.drain_t = 0.0
         self.msgs = []
         self.fear = 0.0
+        # the escape and the road
+        self.escape = False
+        self.escape_t = 0.0
+        self.chaser = None
+        self.cars = []
+        self.cs_t = 0.0
+        self.cs_fired = set()
+        self.world.x_limit = 54.0
 
     def respawn(self):
+        if self.escape:
+            self.start_escape()
+            return
         p = self.player
         x, z = cell_center(9, 18)
         p.reset(x, W.SEWER_FLOOR, z, 0.0)
@@ -370,6 +381,20 @@ class Game:
             self.running = False
             return
         st = self.state
+        # F9: skip straight to climbing out of the ladder shaft
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_F9 and st in ('title', 'intro', 'play', 'pause', 'note', 'dead'):
+            self.audio.unpause()
+            self.new_game()
+            for v in self.world.valves:
+                v['done'] = True
+            self.valves_done = 5
+            self.world.drained = True
+            self.world.set_valves_done(5)
+            self.world.water_level = self.world.water_target
+            self.start_escape()
+            return
+        if st == 'cutscene':
+            return
         if ev.type in (pygame.WINDOWFOCUSLOST,) and st == 'play':
             self.pause()
             return
@@ -668,7 +693,7 @@ class Game:
                 self.flags.add('memo')
         elif kind == 'ladder':
             if self.world.drained or self.valves_done >= 5:
-                self.start_ending()
+                self.start_climb()
             else:
                 self.message("The ladder is on the other side of the water.")
 
@@ -703,6 +728,437 @@ class Game:
         self.audio.stop_all()
         self.audio.stop_loops()
 
+    # ================================================================== the way out
+    def start_climb(self):
+        """Up the service ladder: a few seconds of rungs and a shaft of moonlight."""
+        self.state = 'climb'
+        self.climb_t = 0.0
+        self.climb_rung = 0
+        self.audio.loop('creak', 0)
+        self.audio.loop('breath', 0)
+
+    def update_climb(self, dt):
+        self.climb_t += dt
+        rung = int(self.climb_t / 0.42)
+        if rung != self.climb_rung and self.climb_t < 3.6:
+            self.climb_rung = rung
+            self.audio.play_rand('step_conc', 4, 0.5)
+        self.fade = clamp((self.climb_t - 3.2) / 0.8, 0, 1)
+        if self.climb_t > 4.2:
+            self.fade = 0.0
+            self.start_escape()
+
+    def render_climb(self):
+        lx, _, lz = self.world.ladder_pos
+        k = min(1.0, self.climb_t / 4.0)
+        y = -3.4 + 7.5 * (k * k * (3 - 2 * k)) + 0.03 * math.sin(self.climb_t * 15)
+        cam = (lx, y, lz - 0.25)
+        pitch = 0.25 + 0.9 * k
+        fwd = (0.0, math.sin(pitch), math.cos(pitch))
+        self.draw_world(cam, fwd, 1.0, (cam[0] + 0.1, cam[1] - 0.1, cam[2]), fwd, [])
+
+    def start_escape(self):
+        """Out of the manhole into the eastern woods. Route 9 is just ahead.
+        He climbs out behind you a couple of seconds later."""
+        w = self.world
+        p = self.player
+        mx, mz = W.MANHOLE
+        self.escape = True
+        self.escape_t = 0.0
+        w.x_limit = 64.0
+        p.reset(mx + 1.6, float(W.terrain_h(mx + 1.6, mz)), mz, math.pi / 2)
+        self.flags.update({'snap', 'farcall', 'whisper1', 'tunnel', 'tunnelcall', 'junction', 'gallery',
+                           'holding', 'chamber', 'nest'})
+        self.app = None
+        self.app_done = {0, 1, 2}
+        self.moose = Moose(w)
+        self.chaser = {'x': mx, 'z': mz, 'y': float(W.terrain_h(mx, mz)) - 2.2, 'yaw': math.pi / 2, 'phase': 0.0,
+                       'amt': 0.0, 'state': 'below', 'step': 0.0, 'snap': (0.0, 0.0, 0.0), 'snap_t': 0.0, 'roll': 0.0}
+        self.cars = [{'x': W.ROAD_MID + 1.8, 'z': -70.0, 'dir': 1, 'speed': 24.0, 'delay': 1.2, 'sound': False}]
+        self.clock_t = 4 * 3600 + 17 * 60
+        self.flash_on = True
+        self.flash_dir = p.fwd()
+        self.fear = 0.0
+        self.red = 0.0
+        self.glitch = 0.0
+        self.fade = 0.0
+        self.msgs = []
+        self.state = 'play'
+        self.set_mouse(True)
+        self.audio.stop_all()
+        self.message("Fresh air. Headlights flicker through the trees -- the road is right there.", 5)
+        self.set_objective("Run to the road.")
+
+    def update_cars(self, dt):
+        for c in self.cars:
+            if c['delay'] > 0:
+                c['delay'] -= dt
+                continue
+            c['z'] += c['dir'] * c['speed'] * dt
+            # the pass-by sound peaks 2.5 s in, so start it 2.5 s before the car is level with us
+            if not c['sound']:
+                eta = (self.player.z - c['z']) * c['dir'] / c['speed']
+                if eta < 2.5:
+                    c['sound'] = True
+                    pan, _ = self.audio._pan(c['x'], self.player.z)
+                    self.audio.play('car', 0.9, pan)
+        self.cars = [c for c in self.cars if -90 < c['z'] < 90]
+
+    def car_lights(self):
+        out = []
+        for c in self.cars:
+            if c['delay'] > 0:
+                continue
+            out.append(((c['x'], 1.0, c['z'] + c['dir'] * 7.0), 15.0, (1.1, 1.0, 0.8)))
+            out.append(((c['x'], 0.8, c['z'] - c['dir'] * 3.0), 4.0, (0.5, 0.02, 0.0)))
+        return out
+
+    def update_escape(self, dt):
+        """The run to Route 9. He follows a little slower than you walk."""
+        p = self.player
+        self.escape_t += dt
+        p.z = clamp(p.z, W.ESCAPE_Z[0], W.ESCAPE_Z[1])
+        p.x = max(p.x, 20.0)
+        self.update_cars(dt)
+        c = self.chaser
+        g = float(W.terrain_h(c['x'], c['z']))
+        if c['state'] == 'below':
+            if self.escape_t > 2.2:
+                c['state'] = 'rising'
+                self.audio.play3d('call_near', c['x'], c['z'], 50, 1.0)
+                self.audio.play('stinger', 0.6)
+        elif c['state'] == 'rising':
+            c['y'] += 1.9 * dt
+            if c['y'] >= g:
+                c['y'] = g
+                c['state'] = 'chase'
+                self.message("Don't stop walking.", 3)
+        else:
+            dx, dz = p.x - c['x'], p.z - c['z']
+            d = math.hypot(dx, dz)
+            if d > 1e-3:
+                nx = c['x'] + dx / d * 2.3 * dt
+                nz = c['z'] + dz / d * 2.3 * dt
+                nx, nz, _ = self.world.collide(nx, nz, 0.4, c['y'], forest=True)
+                moved = math.hypot(nx - c['x'], nz - c['z'])
+                c['x'], c['z'] = nx, nz
+                c['yaw'] = Moose._turn(c['yaw'], math.atan2(dx, dz), dt * 6)
+                c['phase'] += moved * 2.1
+                c['amt'] += (min(1.0, moved / max(dt, 1e-4) / 2.0) - c['amt']) * min(1.0, dt * 6)
+                c['step'] += moved
+                if c['step'] > 1.25:
+                    c['step'] = 0.0
+                    self.audio.play3d('mstep', c['x'], c['z'], 30, 1.0)
+            c['y'] = float(W.terrain_h(c['x'], c['z']))
+            if d < 1.0:
+                self.kill()
+                return
+        # stop-motion snapshot for his limbs
+        c['snap_t'] -= dt
+        if c['snap_t'] <= 0:
+            c['snap_t'] = random.uniform(0.07, 0.14)
+            c['roll'] = random.uniform(-0.6, 0.6) if random.random() < 0.4 else 0.0
+            c['snap'] = (c['phase'], c['amt'], c['roll'])
+        d = math.hypot(p.x - c['x'], p.z - c['z'])
+        if c['state'] != 'below':
+            self.audio.loop3d('breath', c['x'], c['z'], 16, 1.0)
+            self.fear += (clamp(1 - d / 14, 0, 1) - self.fear) * min(1.0, dt * 3)
+            if self.fear > 0.15:
+                self.heart_t -= dt
+                if self.heart_t <= 0:
+                    self.heart_t = 1.05 - 0.6 * self.fear
+                    self.audio.play('heart', 0.25 + 0.6 * self.fear)
+        if p.x > W.ROAD_X0 - 0.2:
+            self.start_cutscene()
+
+    def chaser_parts(self):
+        c = self.chaser
+        if not c or c['state'] == 'below':
+            return None
+        ph, amt, roll = c['snap']
+        return pose_moose(c['x'], c['y'], c['z'], c['yaw'], ph, amt, hunch=0.75, roll=roll, reach=0.6,
+                          jaw=0.4, t=self.time)[0]
+
+    # ------------------------------------------------------------------ the road cutscene
+    def start_cutscene(self):
+        p = self.player
+        self.state = 'cutscene'
+        self.cs_t = 0.0
+        self.cs_fired = set()
+        self.cs_P = (W.ROAD_X0 - 0.3, clamp(p.z, W.ESCAPE_Z[0] + 2, W.ESCAPE_Z[1] - 2))
+        self.cs_yaw0 = p.yaw
+        self.cars = []
+        self.msgs = []
+        self.obj_t = 0.0
+        self.fear = 0.6
+        self.audio.loop('breath', 0)
+
+    def cs_fire(self, name, at):
+        if self.cs_t >= at and name not in self.cs_fired:
+            self.cs_fired.add(name)
+            return True
+        return False
+
+    def update_cutscene(self, dt):
+        t = self.cs_t = self.cs_t + dt
+        A = self.audio
+        F = self.cs_fight_point()
+        P = self.cs_P
+        cam = self.cs_frame()['cam']
+        A.set_listener(cam[0], cam[2], self.cs_frame()['yaw'])
+        if self.cs_fire('turn', 0.75):
+            A.play('stinger', 1.0)
+            A.play('call_near', 0.9)
+        if 0.8 < t < 4.6:
+            A.loop('breath', 1.0)
+        else:
+            A.loop('breath', 0.0)
+        if self.cs_fire('grab', 1.05):
+            A.play('tackle', 0.5)
+            A.play('heart', 1.0)
+        for i, at in enumerate((1.6, 2.4, 3.1, 3.7, 4.2)):
+            if self.cs_fire('hb%d' % i, at):
+                A.play('heart', 0.9)
+        if self.cs_fire('jaw', 3.4):
+            A.play('screech', 0.35)
+        if self.cs_fire('goat_in', 3.9):
+            A.play('goat_roar', 1.0, pan=0.6)
+        if self.cs_fire('tackle', 4.6):
+            A.play('tackle', 1.0)
+            A.play('impact', 0.6)
+        if self.cs_fire('ground', 5.2):
+            A.play('mstep', 1.0)
+            A.play('static', 0.5)
+        for i in range(14):
+            if self.cs_fire('eat%d' % i, 6.4 + i * 0.3):
+                A.play_rand('eat', 3, 0.8)
+        if self.cs_fire('mooscream', 6.8):
+            A.play('call_near', 0.7)
+        if self.cs_fire('stand_roar', 11.0):
+            A.play('goat_roar', 0.9)
+        for i in range(8):
+            if self.cs_fire('run%d' % i, 13.8 + i * 0.32):
+                A.play_rand('step_conc', 4, 0.7)
+        if self.cs_fire('carsound', 15.6):
+            A.play('car', 1.0, pan=0.5)
+        if self.cs_fire('hit', 17.8):
+            A.play('impact', 1.0)
+            A.play('goat_roar', 0.5)
+        if self.cs_fire('getup', 21.0):
+            A.play('mstep', 0.8)
+        if self.cs_fire('runoff', 23.0):
+            A.play('goat_roar', 0.6, pan=-0.6)
+        for i in range(6):
+            if self.cs_fire('gstep%d' % i, 23.0 + i * 0.35):
+                A.play('mstep', 0.8 - i * 0.12)
+        self.fade = clamp((t - 26.5) / 1.5, 0, 1)
+        self.fear = 0.9 if t < 6 else (0.5 if t < 18 else 0.3)
+        if t > 28.3:
+            self.fade = 0.0
+            self.start_ending()
+
+    def cs_fight_point(self):
+        """Where the Moose Man's root lands when he is slammed down."""
+        P = self.cs_P
+        return (P[0] - 1.8, P[1] - 3.2)
+
+    def cs_feed_point(self):
+        """His chest, once he is on his back (his body lies westward from the root)."""
+        Fx, Fz = self.cs_fight_point()
+        return (Fx - 2.0, Fz)
+
+    def cs_frame(self):
+        """Everything on screen at cutscene time t: camera, actors, cars, lights."""
+        t = self.cs_t
+        P = self.cs_P
+        Fx, Fz = self.cs_fight_point()
+        gnd = 0.03
+
+        def sm(a, b):
+            k = clamp((t - a) / (b - a), 0, 1)
+            return k * k * (3 - 2 * k)
+
+        def lerp(a, b, k):
+            return a + (b - a) * k
+
+        out = {'parts': [], 'lights': [], 'letterbox': True}
+        # ---- the Moose Man
+        mx, mz = P[0] - 1.45, P[1]
+        m_yaw = math.pi / 2           # facing the player (east)
+        reach = 0.2 + 1.35 * sm(0.95, 1.6)
+        jaw = 0.05 + 1.25 * sm(3.3, 4.4)
+        roll = 0.55 * sm(2.2, 3.3) + (0.15 * math.sin(t * 23) if t > 3.3 else 0.0)
+        mx += 0.3 * sm(3.4, 4.5)
+        head_pitch = -0.55 * sm(1.0, 1.8)
+        m_tilt = 0.0
+        my = gnd
+        if t >= 4.6:
+            # tackled: thrown south-west and slammed onto his back
+            k = sm(4.6, 5.15)
+            mx = lerp(mx, Fx, k)
+            mz = lerp(mz, Fz, k)
+            my = gnd + 0.25 * k + 0.8 * math.sin(math.pi * k)
+            m_tilt = -1.45 * k
+            reach = 0.9 + (0.6 * math.sin(t * 17) if t < 10.5 else 0.0)
+            jaw = 1.0 if t < 10.5 else 0.2
+            roll = (random.uniform(-0.5, 0.5) if t < 9.5 else 0.0)
+            head_pitch = -0.3
+        moose = pose_moose(mx, my, mz, m_yaw, 0.0, 0.0, hunch=0.55, roll=roll, head_pitch=head_pitch,
+                           reach=reach, jaw=jaw, t=self.time, tilt=m_tilt)
+        out['parts'].append(moose[0])
+        head_m = moose[1]
+        mhead = (float(head_m[0, 3]), float(head_m[1, 3]), float(head_m[2, 3]))
+        # ---- the Goat Man
+        Ex, Ez = self.cs_feed_point()          # the Moose Man's chest, once he is down
+        gfx, gfz = Ex, Ez - 0.75               # where the Goat Man crouches to feed, facing you
+        lane = W.ROAD_MID - 1.7
+        goat = None
+        if t >= 3.9:
+            if t < 4.6:
+                # charging in out of the trees from the north
+                k = sm(3.9, 4.6)
+                gx, gz = lerp(P[0] - 3.5, mx - 0.2, k), lerp(P[1] + 10.0, mz + 0.8, k)
+                goat = dict(x=gx, z=gz, yaw=math.atan2(mx - gx, mz - gz), phase=t * 14, amt=1.0, hunch=0.85, arms=0.9)
+            elif t < 10.5:
+                # on top of him, feeding
+                bob = math.sin((t - 6.2) * 6.5)
+                k = sm(4.6, 5.3)
+                sx, sz = P[0] - 1.35, P[1] + 0.8
+                goat = dict(x=lerp(sx, gfx, k), z=lerp(sz, gfz, k), yaw=lerp(math.atan2(gfx - sx, gfz - sz), 0.0, k),
+                            crouch=0.95 * k, hunch=0.85 + 0.55 * k,
+                            head_pitch=(0.55 + 0.35 * bob) if t > 6.2 else 0.3, jaw=(0.6 + 0.4 * bob) if t > 6.2 else 0.8,
+                            arms=1.25, bloody=t > 7.0, roll=0.2 * math.sin(t * 3.1))
+            elif t < 14.5:
+                # stands up over the body and looks at you
+                k = sm(10.5, 12.0)
+                look = math.atan2(self._cs_cam_x(t) - gfx, P[1] - gfz)
+                goat = dict(x=gfx, z=gfz, yaw=lerp(0.0, look, sm(11.0, 12.2)), crouch=0.95 * (1 - k),
+                            hunch=lerp(1.4, 0.45, k), head_pitch=0.0, jaw=0.5 * (1 - sm(12, 13)), arms=0.2, bloody=True)
+            elif t < 17.8:
+                # follows you out onto the road
+                k = sm(14.5, 17.8)
+                gx, gz = lerp(gfx, lane, k), lerp(gfz, P[1], k)
+                goat = dict(x=gx, z=gz, yaw=math.atan2(W.ROAD_X1 + 2.5 - gx, P[1] - gz), phase=t * 5, amt=0.9,
+                            hunch=0.5, arms=0.25, bloody=True)
+            elif t < 21.0:
+                # hit: flung down the road, rolls, lies still
+                k = sm(17.8, 18.75)
+                gx = lane + 0.6 * k
+                gz = P[1] - 10.0 * k
+                gy = 2.0 * math.sin(math.pi * min(1.0, (t - 17.8) / 0.95)) if t < 18.75 else 0.0
+                tilt = (math.pi * 2.6 * k) if t < 18.75 else (math.pi / 2)
+                goat = dict(x=gx, z=gz, y=gy, yaw=0.3, tilt=tilt, arms=0.6, bloody=True, hunch=0.3)
+            elif t < 23.0:
+                # gets up, jerkily, and stares at you
+                k = sm(21.0, 22.3)
+                k = math.floor(k * 6) / 6.0
+                gx, gz = lane + 0.6, P[1] - 10.0
+                look = math.atan2(W.ROAD_X1 + 2.5 - gx, P[1] - gz)
+                goat = dict(x=gx, z=gz, yaw=lerp(0.3, look, sm(22.0, 22.6)), tilt=math.pi / 2 * (1 - k),
+                            crouch=0.8 * (1 - k), hunch=0.5, arms=0.4 * (1 - k), bloody=True, roll=0.4 * sm(22.2, 22.9))
+            elif t < 26.0:
+                # and runs off into the trees
+                k = (t - 23.0) / 3.0
+                gx = lane + 0.6 - 18.0 * k
+                gz = P[1] - 10.0 - 4.0 * k
+                goat = dict(x=gx, z=gz, yaw=math.atan2(-18.0, -4.0), phase=t * 13, amt=1.0, hunch=0.85, arms=0.3, bloody=True)
+        if goat:
+            gy = goat.pop('y', float(W.terrain_h(goat['x'], goat['z'])))
+            gx, gz, gyaw = goat.pop('x'), goat.pop('z'), goat.pop('yaw')
+            if 'phase' in goat:
+                goat['walk_phase'] = goat.pop('phase')
+            if 'amt' in goat:
+                goat['walk_amt'] = goat.pop('amt')
+            out['parts'].append(pose_goat(gx, gy, gz, gyaw, t=self.time, **goat)[0])
+            out['goat'] = (gx, gy + 2.6, gz)
+        # ---- spill from the dropped flashlight, so you can see what he is doing
+        if 4.6 <= t < 14.5:
+            out['lights'].append(((Ex + 1.2, 1.4, Ez + 0.8), 8.0, (0.75, 0.7, 0.6)))
+        # ---- the car that never stops (southbound, nearer lane)
+        if 15.6 <= t < 21.5:
+            cx = lane
+            cz = P[1] + 26.0 - 28.0 * (t - 16.87)
+            out['parts'].append(car_parts(cx, cz, -1))
+            out['lights'].append(((cx, 1.0, cz - 7.0), 16.0, (1.2, 1.1, 0.9)))
+            out['lights'].append(((cx, 0.8, cz + 3.0), 4.0, (0.5, 0.02, 0.0)))
+        # ---- the camera
+        eye = 1.62
+        cam_x = self._cs_cam_x(t)
+        if t < 1.0:
+            yaw = lerp(self.cs_yaw0, -math.pi / 2, sm(0.0, 0.9))
+            cam = (cam_x, gnd + eye, P[1])
+            fwd = (math.sin(yaw), -0.02, math.cos(yaw))
+            up = (0.0, 1.0, 0.0)
+        elif t < 4.6:
+            # lifted up to his face
+            k = sm(1.0, 1.9)
+            hold = (mhead[0] + 0.95, mhead[1] + 0.05, mhead[2])
+            cam = (lerp(cam_x, hold[0], k), lerp(gnd + eye, hold[1], k) + 0.03 * math.sin(t * 9), lerp(P[1], hold[2], k))
+            look = (mhead[0] - cam[0], mhead[1] + 0.05 - cam[1], mhead[2] - cam[2])
+            ln = math.sqrt(sum(v * v for v in look))
+            fwd = tuple(v / ln for v in look)
+            if t > 4.2:
+                fwd = (fwd[0], fwd[1], fwd[2] + 0.5 * sm(4.2, 4.6))     # glance as something comes
+            up = (0.0, 1.0, 0.0)
+            yaw = math.atan2(fwd[0], fwd[2])
+        elif t < 12.3:
+            # dropped; lying in the gravel, watching
+            k = sm(4.6, 5.2)
+            hold_y = (mhead[1] if t < 4.7 else 2.4)
+            cy = lerp(hold_y, gnd + 0.32, k)
+            cam = (cam_x + 0.1 * random.uniform(-1, 1) * (1 - k), cy, P[1] - 0.5 * k)
+            target = (Ex, 0.6 + 1.2 * sm(10.5, 12.0), Ez - 0.3)
+            look = (target[0] - cam[0], target[1] - cam[1], target[2] - cam[2])
+            ln = math.sqrt(sum(v * v for v in look))
+            fwd = tuple(v / ln for v in look)
+            r = 0.55 * (1 - sm(5.6, 11.0)) + 0.08
+            up = (math.sin(r), math.cos(r), 0.0)
+            yaw = math.atan2(fwd[0], fwd[2])
+        else:
+            # get up, run across the road, turn around
+            rise = sm(12.3, 13.2)
+            cy = lerp(gnd + 0.32, gnd + eye, rise) + (0.05 * math.sin(t * 14) if 13.8 < t < 16.2 else 0.0)
+            if t < 16.2:
+                yaw = lerp(math.atan2(Ex - cam_x, Ez - 0.3 - P[1]), math.pi / 2, sm(12.6, 13.6))
+            else:
+                yaw = lerp(math.pi / 2, -math.pi / 2 + 0.35, sm(16.2, 17.1))
+                if t > 18.0:
+                    # follow the goat down the road
+                    gt = out.get('goat')
+                    if gt:
+                        yaw = lerp(yaw, math.atan2(gt[0] - cam_x, gt[2] - P[1]), sm(18.0, 18.6))
+            pz = P[1] - 0.5 * (1 - sm(12.3, 13.2))
+            cam = (cam_x, cy, pz)
+            pitch = -0.06
+            fwd = (math.sin(yaw) * math.cos(pitch), math.sin(pitch), math.cos(yaw) * math.cos(pitch))
+            up = (0.0, 1.0, 0.0)
+        out.update(cam=cam, fwd=fwd, up=up, yaw=yaw)
+        return out
+
+    def _cs_cam_x(self, t):
+        P = self.cs_P
+        k = clamp((t - 13.6) / 2.6, 0, 1)
+        return P[0] + (W.ROAD_X1 + 2.5 - P[0]) * (k * k * (3 - 2 * k))
+
+    def render_cutscene(self):
+        fr = self.cs_frame()
+        cam, fwd = fr['cam'], fr['fwd']
+        rx, rz = -math.cos(fr['yaw']), math.sin(fr['yaw'])
+        fpos = (cam[0] + rx * 0.18, cam[1] - 0.12, cam[2] + rz * 0.18)
+        # the flashlight is dropped when you fall: it lies in the gravel pointing at them
+        if 4.6 <= self.cs_t < 12.3:
+            Ex, Ez = self.cs_feed_point()
+            fpos = (cam[0] + 0.4, 0.15, cam[2] + 0.2)
+            d = (Ex - fpos[0], 0.45, Ez - 0.3 - fpos[2])
+            ln = math.sqrt(sum(v * v for v in d))
+            fdir = tuple(v / ln for v in d)
+        else:
+            fdir = fwd
+        self.draw_world(cam, fwd, 1.0, fpos, fdir, fr['parts'], up=fr['up'], extra_lights=fr['lights'])
+        bar = int(self.UH * 0.11)
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, 0, self.UW, bar))
+        pygame.draw.rect(self.ui, (0, 0, 0, 255), (0, self.UH - bar, self.UW, bar))
+
     def kill(self):
         if self.state != 'play':
             return
@@ -730,6 +1186,10 @@ class Game:
                 self.start_play()
         elif st == 'play':
             self.update_play(dt)
+        elif st == 'climb':
+            self.update_climb(dt)
+        elif st == 'cutscene':
+            self.update_cutscene(dt)
         elif st == 'scare':
             self.scare_t += dt
             if self.scare_t > 1.7:
@@ -839,7 +1299,12 @@ class Game:
 
         self.audio.set_listener(p.x, p.z, p.yaw)
         self.update_events(dt)
-        self.update_moose(dt)
+        if self.escape:
+            self.update_escape(dt)
+            if self.state != 'play':
+                return
+        else:
+            self.update_moose(dt)
         self.update_valves(dt, keys)
         self.update_herd(dt)
         self.update_ambience(dt)
@@ -1138,10 +1603,15 @@ class Game:
         out.sort(key=lambda o: o[0])
         return [o[1] for o in out[:8]]
 
-    def draw_world(self, cam, fwd, flash, flash_pos, flash_dir, moose_parts_list, fov=None):
+    def draw_world(self, cam, fwd, flash, flash_pos, flash_dir, moose_parts_list, fov=None, up=(0.0, 1.0, 0.0),
+                   extra_lights=None):
         r = self.r
         lights = self.gather_lights(cam[0], cam[2])
-        r.begin(cam, fwd, fov or self.settings['fov'], self.env(cam[2]), self.time, flash, flash_pos, flash_dir, lights)
+        if extra_lights:
+            # headlights and the like always win a slot
+            lights = (list(extra_lights) + lights)[:8]
+        r.begin(cam, fwd, fov or self.settings['fov'], self.env(cam[2]), self.time, flash, flash_pos, flash_dir, lights,
+                up=up)
         r.draw(self.m_forest)
         r.draw(self.m_sewer)
         if cam[2] < 60:
@@ -1184,6 +1654,16 @@ class Game:
             self.r.fbo.clear(0, 0, 0, 1)
             self.draw_intro_ui()
             post = self.post_params({'fear': 0.0})
+        elif st == 'climb':
+            self.render_climb()
+            post = self.post_params({'fear': 0.2})
+            self.draw_osd()
+        elif st == 'cutscene':
+            self.render_cutscene()
+            t = self.cs_t
+            hit = 1.0 if (4.6 <= t < 5.0 or 17.8 <= t < 18.1) else 0.0
+            post = self.post_params({'glitch': hit + (0.25 if 3.9 <= t < 4.6 else 0.0),
+                                     'red': 0.35 * hit})
         elif st in ('play', 'pause', 'note', 'settings'):
             self.render_play_scene()
             post = self.post_params()
@@ -1258,7 +1738,16 @@ class Game:
                                     roll=0.6 if (self.time % 2.7) > 2.2 else 0.0)[0])
         if self.phantom > 0:
             parts.append(self.face_parts(cam, fwd, p.yaw, 0.9))
-        self.draw_world(cam, fwd, flash, fpos, self.flash_dir, parts)
+        extra = None
+        if self.escape:
+            cp = self.chaser_parts()
+            if cp:
+                parts.append(cp)
+            for c in self.cars:
+                if c['delay'] <= 0:
+                    parts.append(car_parts(c['x'], c['z'], c['dir']))
+            extra = self.car_lights()
+        self.draw_world(cam, fwd, flash, fpos, self.flash_dir, parts, extra_lights=extra)
 
     def face_parts(self, cam, fwd, yaw, dist):
         # skull lifted to stare straight at you, jaw hanging open, head twitching

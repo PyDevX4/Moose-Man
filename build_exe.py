@@ -44,11 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "He looks worse now.",
-    "Starved and taller. Bare pale limbs. Ribs and spine through torn hide.",
-    "Hands that reach the floor. A skull fused onto a raw, bloody neck.",
-    "Human eyes in the sockets -- they catch your flashlight in the dark.",
-    "One antler snapped off. He moves like stop-motion. The jumpscare stares back.",
+    "A new ending. Climb the ladder and keep going.",
+    "Out of a manhole into the eastern woods. Route 9 is just ahead.",
+    "He climbs out behind you. Don't stop walking.",
+    "Something bigger lives in Hollins Woods. Chapter Two is coming.",
+    "(F9 skips straight to the climb out of the ladder shaft.)",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

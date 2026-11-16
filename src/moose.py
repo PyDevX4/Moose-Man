@@ -23,6 +23,18 @@ def moose_meshes():
         'flesh': unit_cube(L.SKIN, (0.5, 0.45, 0.42)),
         'gore': unit_cube(L.SKIN, (0.24, 0.035, 0.03)),
         'rib': unit_cube(L.BONE, (0.58, 0.53, 0.44)),
+        # the Goat Man
+        'gfur': unit_cube(L.FUR, (0.62, 0.6, 0.58)),
+        'gdark': unit_cube(L.FUR, (0.32, 0.3, 0.3)),
+        'horn': unit_cube(L.BONE, (0.42, 0.37, 0.3)),
+        'geye': unit_cube(L.GLOW + EMIS, (0.95, 0.7, 0.1)),
+        # the car
+        'carbody': unit_cube(L.METAL, (0.55, 0.6, 0.85)),
+        'glass': unit_cube(L.METAL, (0.12, 0.14, 0.2)),
+        'tire': unit_cube(L.BLACK),
+        'chrome': unit_cube(L.METAL, (1.4, 1.4, 1.4)),
+        'headl': unit_cube(L.GLOW + EMIS, (1.0, 0.95, 0.8)),
+        'taill': unit_cube(L.GLOW + EMIS, (0.85, 0.05, 0.03)),
         'teeth': unit_cube(L.BONE, (0.8, 0.68, 0.42)),
         'eyewhite': unit_cube(L.GLOW + EMIS, (0.62, 0.6, 0.52)),
     }
@@ -70,7 +82,7 @@ def herd_head_mesh():
 
 
 def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_yaw=0.0,
-               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0):
+               head_pitch=0.0, scale=1.0, reach=0.0, jaw=0.0, t=0.0, tilt=0.0):
     """Build the Moose Man as a list of (mesh_key, matrix).
 
     Tall, starved and wrong: bare pale shins and forearms, ribs and spine
@@ -80,7 +92,7 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
     """
     parts = []
     add = parts.append
-    M0 = T(x, y, z) @ RY(yaw) @ S(scale)
+    M0 = T(x, y, z) @ RY(yaw) @ RX(tilt) @ S(scale)    # tilt -pi/2: flat on his back
     H = 1.55
     # ---------------------------------------------------------- legs (reverse knees)
     for side in (-1, 1):
@@ -193,6 +205,111 @@ def pose_moose(x, y, z, yaw, walk_phase, walk_amt, hunch=0.45, roll=0.0, head_ya
         add(('bone', stub @ T(-0.13 + k * 0.09, 0.24, 0) @ RZ(az) @ T(0, ln / 2, 0) @ S(0.02, ln, 0.02)))
     add(('gore', stub @ T(0.0, 0.12, 0.03) @ RX(0.1 * math.sin(t * 1.9)) @ T(0, -0.2, 0) @ S(0.05, 0.4, 0.012)))
     return parts, head
+
+
+def pose_goat(x, y, z, yaw, walk_phase=0.0, walk_amt=0.0, hunch=0.35, crouch=0.0, head_pitch=0.0,
+              head_yaw=0.0, roll=0.0, jaw=0.0, arms=0.0, tilt=0.0, bloody=False, t=0.0):
+    """The Goat Man: bigger than the Moose Man and built like a bull.
+
+    Shaggy grey-black fur, goat legs on hooves, a massive humped chest, long
+    arms with black claws, a long sloping goat face with a beard, yellow eyes
+    with sideways pupils, and ram horns that curl back around his head.
+    """
+    parts = []
+    add = parts.append
+    M0 = T(x, y, z) @ RY(yaw) @ RX(tilt)
+    H = 1.75 * (1.0 - 0.42 * crouch)
+    for side in (-1, 1):
+        ph = walk_phase + (0.0 if side < 0 else math.pi)
+        swing = math.sin(ph) * 0.6 * walk_amt
+        hip = M0 @ T(side * 0.24, H, 0) @ RX(-0.45 - 0.95 * crouch - swing)
+        add(('gfur', hip @ T(0, -0.45, 0) @ S(0.25, 0.92, 0.28)))
+        knee = hip @ T(0, -0.9, 0) @ RX(1.1 + 1.05 * crouch + 0.45 * walk_amt * max(0.0, math.cos(ph)))
+        add(('gfur', knee @ T(0, -0.42, 0) @ S(0.15, 0.86, 0.16)))
+        ankle = knee @ T(0, -0.85, 0) @ RX(-0.65 - 0.15 * crouch)
+        add(('gdark', ankle @ T(0, -0.16, 0) @ S(0.1, 0.32, 0.1)))
+        add(('black', ankle @ T(0, -0.37, 0.04) @ S(0.17, 0.12, 0.23)))
+    torso = M0 @ T(0, H, 0) @ RX(hunch)
+    add(('gfur', torso @ T(0, 0.12, 0) @ S(0.52, 0.38, 0.44)))
+    add(('gfur', torso @ T(0, 0.72, 0.02) @ S(0.8, 0.82, 0.56)))
+    add(('gdark', torso @ T(0, 1.12, -0.1) @ S(0.62, 0.36, 0.5)))
+    for i in range(9):
+        px = -0.34 + i * 0.085
+        ln = 0.3 + 0.12 * ((i * 7) % 3)
+        sw = 0.12 * math.sin(t * 2.3 + i) + 0.2 * walk_amt * math.sin(walk_phase + i)
+        add(('gdark', torso @ T(px, 0.35, 0.25) @ RX(-hunch + sw) @ T(0, -ln / 2, 0) @ S(0.07, ln, 0.03)))
+    if bloody:
+        add(('gore', torso @ T(0.05, 0.8, 0.285) @ S(0.42, 0.5, 0.01)))
+        add(('gore', torso @ T(-0.12, 0.5, 0.285) @ S(0.18, 0.3, 0.01)))
+    for side in (-1, 1):
+        ph = walk_phase + (math.pi if side < 0 else 0.0)
+        aswing = math.sin(ph) * 0.3 * walk_amt
+        sh = torso @ T(side * 0.46, 1.05, 0) @ RX(-hunch - aswing - arms * 1.2) @ RZ(side * 0.2)
+        add(('gfur', sh @ T(0, -0.4, 0) @ S(0.21, 0.82, 0.21)))
+        el = sh @ T(0, -0.8, 0) @ RX(-0.35 - arms * 0.45)
+        add(('gfur', el @ T(0, -0.42, 0) @ S(0.17, 0.86, 0.17)))
+        hand = el @ T(0, -0.86, 0)
+        add(('skin', hand @ T(0, -0.08, 0) @ S(0.17, 0.17, 0.08)))
+        for f in (-1.5, -0.5, 0.5, 1.5):
+            cm = hand @ T(f * 0.04, -0.16, 0) @ RZ(f * 0.07) @ RX(-0.45) @ T(0, -0.14, 0)
+            add(('black', cm @ S(0.03, 0.3, 0.03)))
+            if bloody:
+                add(('gore', cm @ T(0, 0.06, 0) @ S(0.034, 0.12, 0.034)))
+    neck = torso @ T(0, 1.22, 0.16) @ RX(0.5)
+    add(('gfur', neck @ T(0, 0.15, 0) @ S(0.32, 0.42, 0.32)))
+    head = neck @ T(0, 0.36, 0.05) @ RX(-(hunch + 0.5) + 0.3 + head_pitch) @ RY(head_yaw) @ RZ(roll)
+    add(('gfur', head @ T(0, 0.12, 0) @ S(0.33, 0.31, 0.35)))
+    face = head @ T(0, 0.06, 0.16) @ RX(0.8)
+    add(('gdark', face @ T(0, 0.0, 0.25) @ S(0.22, 0.21, 0.52)))
+    add(('black', face @ T(0, 0.02, 0.51) @ S(0.17, 0.11, 0.05)))
+    jaw_m = face @ T(0, -0.11, 0.06) @ RX(jaw * 0.8)
+    add(('gdark', jaw_m @ T(0, 0, 0.23) @ S(0.18, 0.06, 0.44)))
+    for side in (-1, 1):
+        for k in range(5):
+            add(('teeth', face @ T(side * 0.075, -0.1, 0.1 + k * 0.07) @ S(0.03, 0.05, 0.035)))
+            add(('teeth', jaw_m @ T(side * 0.065, 0.05, 0.08 + k * 0.07) @ S(0.03, 0.05, 0.035)))
+    for k in range(4):
+        sw = 0.15 * math.sin(t * 2.0 + k)
+        bm = jaw_m @ T(-0.06 + k * 0.04, -0.03, 0.12 + k * 0.05) @ RX(-0.8 - 0.4 * jaw + sw) @ T(0, -0.2, 0)
+        add(('gore' if (bloody and k % 2 == 0) else 'gdark', bm @ S(0.04, 0.42, 0.03)))
+    if bloody:
+        add(('gore', jaw_m @ T(0, -0.02, 0.26) @ S(0.185, 0.05, 0.4)))
+        add(('gore', face @ T(0, -0.06, 0.38) @ S(0.225, 0.08, 0.26)))
+    for side in (-1, 1):
+        add(('geye', head @ T(side * 0.165, 0.15, 0.16) @ S(0.03, 0.06, 0.08)))
+        add(('black', head @ T(side * 0.181, 0.15, 0.16) @ S(0.005, 0.016, 0.06)))
+        add(('gdark', head @ T(side * 0.24, 0.17, 0.02) @ RZ(-side * 0.35) @ S(0.24, 0.06, 0.11)))
+        # ram horn, curling back and around
+        m = head @ T(side * 0.12, 0.27, 0.02) @ RZ(-side * 0.35)
+        w = 0.12
+        for i in range(12):
+            seg = 0.13
+            add(('horn', m @ T(0, seg / 2, 0) @ S(w, seg + 0.02, w)))
+            m = m @ T(0, seg, 0) @ RX(-0.52) @ RZ(-side * 0.16)
+            w *= 0.92
+    return parts, head
+
+
+def car_parts(x, z, heading):
+    """A 2003 four-door sedan. heading: +1 drives toward +z, -1 toward -z."""
+    yaw = 0.0 if heading > 0 else math.pi
+    M = T(x, 0.0, z) @ RY(yaw)
+    p = []
+    add = p.append
+    add(('carbody', M @ T(0, 0.62, 0) @ S(1.78, 0.62, 4.7)))
+    add(('carbody', M @ T(0, 1.15, -0.25) @ S(1.6, 0.5, 2.3)))
+    add(('glass', M @ T(0, 1.16, 0.93) @ RX(-0.55) @ S(1.5, 0.48, 0.04)))
+    add(('glass', M @ T(0, 1.16, -1.42) @ RX(0.6) @ S(1.5, 0.45, 0.04)))
+    for s in (-1, 1):
+        add(('glass', M @ T(s * 0.805, 1.17, -0.25) @ S(0.02, 0.36, 2.1)))
+        for wz in (1.45, -1.45):
+            add(('tire', M @ T(s * 0.82, 0.33, wz) @ S(0.24, 0.66, 0.66)))
+            add(('chrome', M @ T(s * 0.95, 0.33, wz) @ S(0.02, 0.32, 0.32)))
+        add(('headl', M @ T(s * 0.62, 0.72, 2.36) @ S(0.36, 0.16, 0.03)))
+        add(('taill', M @ T(s * 0.66, 0.78, -2.36) @ S(0.3, 0.16, 0.03)))
+    add(('chrome', M @ T(0, 0.42, 2.37) @ S(1.76, 0.12, 0.06)))
+    add(('chrome', M @ T(0, 0.42, -2.37) @ S(1.76, 0.12, 0.06)))
+    return p
 
 
 class Moose:

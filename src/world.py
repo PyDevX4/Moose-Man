@@ -19,6 +19,13 @@ PATH_PTS = [(0, -62), (0, -48), (4, -30), (-3, -15), (5, 0), (2, 15), (-4, 28), 
 CAMPFIRE = (9.0, 8.0)
 START = (0.0, -50.0)
 
+# ---- the escape: a manhole in the eastern woods, and Route 9 beyond it
+MANHOLE = (26.0, 18.0)
+ROAD_X0, ROAD_X1 = 48.5, 55.5      # asphalt edges (the road runs north-south)
+ROAD_MID = (ROAD_X0 + ROAD_X1) / 2
+STREETLIGHT = (57.2, 18.0)
+ESCAPE_Z = (6.0, 30.0)             # how far north/south the player may wander while escaping
+
 
 def clamp(v, a, b):
     return a if v < a else (b if v > b else v)
@@ -38,7 +45,17 @@ def terrain_h(x, z):
     d = np.hypot(x, z - 48.0)
     k = np.clip((d - 3.0) / 10.0, 0, 1)
     k = k * k * (3 - 2 * k)
-    return h * k
+    # the road bed is graded flat
+    kr = np.clip((np.abs(x - ROAD_MID) - 5.0) / 5.0, 0, 1)
+    kr = kr * kr * (3 - 2 * kr)
+    return h * k * kr
+
+
+def keep_clear(x, z, margin):
+    """Where nothing may grow: the road corridor and the manhole clearing."""
+    if ROAD_X0 - 5.5 - margin < x < ROAD_X1 + 5.5 + margin:
+        return True
+    return math.hypot(x - MANHOLE[0], z - MANHOLE[1]) < 4.0 + margin
 
 
 def path_dist(x, z):
@@ -84,6 +101,7 @@ class World:
         self.water_level = -5.3
         self.water_target = -5.3
         self.ladder_pos = None
+        self.x_limit = 54.0          # widened to reach the road during the escape
 
     # ------------------------------------------------------------------ grid
     def build_grid(self):
@@ -284,7 +302,7 @@ class World:
                             if d < mn and d > 1e-6:
                                 x += dx / d * (mn - d)
                                 z += dz / d * (mn - d)
-                x = clamp(x, -54.0, 54.0)
+                x = clamp(x, -54.0, self.x_limit)
                 z = max(z, -60.0)
         return x, z, hit_water
 
@@ -421,9 +439,9 @@ class World:
         self._dead_tree(b, -5.6, 21.0, 0.35, 9.0, rng, hang_branch=True)
 
         tries = 0
-        while len(self.trees) < 420 and tries < 30000:
+        while len(self.trees) < 440 and tries < 30000:
             tries += 1
-            x = rng.uniform(-60, 60)
+            x = rng.uniform(-60, 64)
             z = rng.uniform(-63, 46)
             if float(path_dist(x, z)) < 2.7:
                 continue
@@ -432,6 +450,8 @@ class World:
             if math.hypot(x - CAMPFIRE[0], z - CAMPFIRE[1]) < 6:
                 continue
             if z > 39 and abs(x) < 10:
+                continue
+            if keep_clear(x, z, 0.0):
                 continue
             if self.near_tree(x, z, 2.0):
                 continue
@@ -455,7 +475,7 @@ class World:
         for _ in range(160):
             x = rng.uniform(-56, 56)
             z = rng.uniform(-62, 45)
-            if float(path_dist(x, z)) < 1.8 or math.hypot(x - CAMPFIRE[0], z - CAMPFIRE[1]) < 4:
+            if float(path_dist(x, z)) < 1.8 or math.hypot(x - CAMPFIRE[0], z - CAMPFIRE[1]) < 4 or keep_clear(x, z, 1.0):
                 continue
             h0 = float(terrain_h(x, z))
             rr = rng.uniform(0.5, 1.1)
@@ -463,7 +483,7 @@ class World:
         for _ in range(45):
             x = rng.uniform(-56, 56)
             z = rng.uniform(-62, 45)
-            if float(path_dist(x, z)) < 2.0:
+            if float(path_dist(x, z)) < 2.0 or keep_clear(x, z, 1.5):
                 continue
             h0 = float(terrain_h(x, z))
             sz = rng.uniform(0.4, 1.4)
@@ -475,7 +495,7 @@ class World:
         for _ in range(14):
             x = rng.uniform(-50, 50)
             z = rng.uniform(-58, 40)
-            if float(path_dist(x, z)) < 4:
+            if float(path_dist(x, z)) < 4 or keep_clear(x, z, 4.0):
                 continue
             h0 = float(terrain_h(x, z))
             a = rng.random() * 6.28
@@ -487,6 +507,7 @@ class World:
         self._campfire(b, rng)
         self._forest_notes(b)
         self._deer(b)
+        self._road(b)
         # drag marks to the culvert
         for i in range(10):
             z = 37.5 + i * 1.0
@@ -610,6 +631,56 @@ class World:
         b.box((sx, h0 + 1.55, sz + 0.06), (1.35, 1.0, 0.04), L.METAL)
         b.facing_quad((sx, h0 + 1.55, sz + 0.03), (0, 0, -1), 1.3, 0.95, L.SIGN)
         self.notes['sign'] = {'pos': (sx, h0 + 1.5, sz), 'read': False}
+
+    def _road(self, b):
+        """Route 9: two lanes of old asphalt, a sodium streetlight, and the
+        manhole the player climbs out of."""
+        z0, z1 = -64.0, 46.0
+        y = 0.03
+        asphalt = (0.42, 0.42, 0.45)
+        z = z0
+        while z < z1:
+            zb = min(z1, z + 4.0)
+            b.quad((ROAD_X0, y, z), (ROAD_X1, y, z), (ROAD_X1, y, zb), (ROAD_X0, y, zb), L.CONCRETE, asphalt,
+                   uvs=((0, z * 0.3), (2.1, z * 0.3), (2.1, zb * 0.3), (0, zb * 0.3)))
+            # gravel shoulders
+            for xa, xb in ((ROAD_X0 - 1.2, ROAD_X0), (ROAD_X1, ROAD_X1 + 1.2)):
+                b.quad((xa, y - 0.01, z), (xb, y - 0.01, z), (xb, y - 0.01, zb), (xa, y - 0.01, zb), L.MUD, (1.2, 1.15, 1.05),
+                       uvs=((0, z * 0.5), (0.6, z * 0.5), (0.6, zb * 0.5), (0, zb * 0.5)))
+            # faded edge lines
+            for xe in (ROAD_X0 + 0.25, ROAD_X1 - 0.25):
+                b.quad((xe - 0.06, y + 0.005, z), (xe + 0.06, y + 0.005, z), (xe + 0.06, y + 0.005, zb), (xe - 0.06, y + 0.005, zb),
+                       L.GLOW, (0.45, 0.45, 0.42))
+            z = zb
+        # dashed yellow centre line
+        z = z0
+        while z < z1:
+            for xo in (-0.09, 0.09):
+                xm = ROAD_MID + xo
+                b.quad((xm - 0.05, y + 0.006, z), (xm + 0.05, y + 0.006, z), (xm + 0.05, y + 0.006, z + 3.0),
+                       (xm - 0.05, y + 0.006, z + 3.0), L.GLOW, (0.55, 0.42, 0.08))
+            z += 6.0
+        # sodium streetlight on the far shoulder, arm reaching over the road
+        sx, sz = STREETLIGHT
+        b.box((sx, 3.5, sz), (0.16, 7.0, 0.16), L.METAL, (0.6, 0.6, 0.6))
+        b.box((sx - 1.2, 6.95, sz), (2.4, 0.1, 0.1), L.METAL, (0.6, 0.6, 0.6))
+        b.box((sx - 2.3, 6.85, sz), (0.6, 0.12, 0.3), L.METAL, (0.5, 0.5, 0.5))
+        b.box((sx - 2.3, 6.77, sz), (0.45, 0.04, 0.22), L.GLOW + EMIS, (1.0, 0.62, 0.25))
+        self.lights.append({'pos': (sx - 2.3, 6.5, sz), 'rad': 17.0, 'col': (0.9, 0.48, 0.15), 'flicker': 'soft'})
+        # mile marker
+        b.box((ROAD_X1 + 0.8, 0.6, sz - 6.0), (0.06, 1.2, 0.06), L.METAL)
+        b.box((ROAD_X1 + 0.8, 1.1, sz - 6.0), (0.04, 0.4, 0.25), L.GLOW, (0.2, 0.35, 0.2))
+        # manhole: concrete collar, black hole, cover dragged aside
+        mx, mz = MANHOLE
+        h0 = float(terrain_h(mx, mz))
+        b.cylinder(0.8, 0.75, 0.25, 12, L.CONCRETE, (0.6, 0.6, 0.58), m=T(mx, h0 - 0.1, mz), cap=False)
+        b.cylinder(0.62, 0.62, 0.001, 12, L.BLACK, m=T(mx, h0 + 0.13, mz), cap=True)
+        b.cylinder(0.6, 0.6, 0.05, 12, L.METAL, (0.7, 0.7, 0.7), m=T(mx + 1.3, h0 + 0.01, mz + 0.4) @ RZ(0.08), cap=True)
+        # drag marks leading away from the hole
+        for i in range(5):
+            px_ = mx + 1.0 + i * 0.9
+            b.quad((px_, h0 + 0.03, mz - 0.3), (px_ + 0.9, h0 + 0.03, mz - 0.3), (px_ + 0.9, h0 + 0.03, mz + 0.3),
+                   (px_, h0 + 0.03, mz + 0.3), L.BLOOD, (0.6, 0.6, 0.6), uvs=((0, 0), (1, 0), (1, 1), (0, 1)))
 
     def _deer(self, b):
         x, z = -4.2, 21.0

@@ -228,6 +228,59 @@ def synth_all():
     td += band(noise(n), 30, 200) * slow_mod(n, 0.2, 0.8) * 1.2
     tone = np.sin(2 * np.pi * 440 * 1.4983 * t) * 0.012 * slow_mod(n, 0.3, 1.0)
     s['title_amb'] = loopable(norm(td, 0.55) + tone, 1.5)
+
+    # ---- Goat Man roar: a bleat dropped two octaves, stuttering, with a growl under it
+    t = tt(3.2)
+    f0 = 150 - 60 * (t / 3.2) + 6 * np.sin(2 * np.pi * 4 * t)
+    ph = 2 * np.pi * np.cumsum(f0) / SR
+    tone = np.zeros_like(t)
+    for h in range(1, 16):
+        fh = f0 * h
+        w = (1.0 / h) * (1 + 1.8 * np.exp(-((fh - 650) / 180) ** 2) + 1.3 * np.exp(-((fh - 1250) / 260) ** 2))
+        tone += np.sin(ph * h) * w
+    bleat = 0.45 + 0.55 * (np.sin(2 * np.pi * 9.5 * t) > -0.2)
+    growl = band(noise(len(t)), 40, 260) * 2.2 * (0.6 + 0.4 * np.sin(2 * np.pi * 23 * t))
+    env = np.clip(t / 0.08, 0, 1) * np.clip((3.2 - t) / 1.2, 0, 1)
+    roar = np.tanh((tone * bleat + growl) * 1.2) * env
+    s['goat_roar'] = norm(echo(band(roar, 40, 4000), 0.14, 0.35, 4), 1.0)
+
+    # ---- eating: wet tearing and crunching
+    for i in range(3):
+        n = int(SR * 0.7)
+        x = np.zeros(n)
+        for _ in range(4):
+            i0 = int(_rng.uniform(0, 0.45) * SR)
+            ln = int(_rng.uniform(0.06, 0.2) * SR)
+            seg = band(noise(ln), 250, 2600) * np.sin(np.linspace(0, np.pi, ln)) * slow_mod(ln, 80, 0.8)
+            x[i0:i0 + ln] += seg
+        crunch = (noise(n) > 0.985) * noise(n) * env_ad(n, 0.01, 4) * 1.5
+        x += band(crunch, 600, 6000)
+        s['eat%d' % i] = norm(x, 0.8)
+
+    # ---- body impact: car hits flesh
+    t = tt(1.4)
+    im = np.sin(2 * np.pi * 42 * t) * np.exp(-t * 7) * 1.6
+    im += band(noise(len(t)), 70, 1600) * np.exp(-t * 14) * 1.4
+    im += sum(np.sin(2 * np.pi * fq * t) * np.exp(-t * dc) for fq, dc in ((380, 18), (731, 24), (1133, 30))) * 0.5
+    im += band((noise(len(t)) > 0.97) * noise(len(t)), 3000, 9000) * np.exp(-t * 5) * 0.8
+    s['impact'] = norm(np.tanh(im * 1.3), 1.0)
+
+    # ---- tackle: two big bodies colliding
+    t = tt(0.8)
+    tk = np.sin(2 * np.pi * 55 * t) * np.exp(-t * 10) + band(noise(len(t)), 80, 900) * np.exp(-t * 16) * 1.2
+    s['tackle'] = norm(echo(np.tanh(tk * 1.5), 0.09, 0.3, 3), 1.0)
+
+    # ---- car passing at speed: engine with a doppler drop, tyre roar
+    n = int(SR * 5.0)
+    t = np.arange(n) / SR
+    tc = 2.5
+    dop = 1.0 + 0.13 * np.tanh(-(t - tc) * 3.0)
+    f = 88 * dop
+    phs = 2 * np.pi * np.cumsum(f) / SR
+    eng = sum(saw(phs * k) / k for k in (1, 2, 3)) + np.sin(phs * 0.5) * 0.6
+    tyre = band(noise(n), 180, 1800) * 1.3
+    env = 1.0 / (1.0 + ((t - tc) * 1.9) ** 2)
+    s['car'] = norm(band((eng * 0.5 + tyre) * env, 40, 5000), 0.95)
     return s
 
 
