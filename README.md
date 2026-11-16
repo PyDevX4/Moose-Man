@@ -69,9 +69,12 @@ snowstorm is coming. Take the lantern and go out for firewood.
   dock.
 - **E** picks a bundle up. **E at the woodpile** on the cabin porch stacks
   everything you're carrying. Stacked wood is safe.
-- **The Goat Man is out there looking for you.** Your lantern (**F**) lets him
-  see you from much further away. Running and splashing through the rivers are
-  loud. The lake is too deep to cross.
+- **The Goat Man is out there looking for you, and he hunts light and
+  movement.** Your lantern (**F**) gives you away from far off. With it out,
+  he only notices you when you move. Running carries furthest, and crouching
+  barely at all. **Lantern off and standing still, he can't see you**: he
+  stops, stares toward where you were, looks around, and leaves. Running and
+  splashing through the rivers are loud. The lake is too deep to cross.
 - If he catches you, you wake on the porch. **Whatever you were carrying is
   lost** (it goes back where you found it). The woodpile keeps what you stacked.
 - With 20 stacked, go inside and take the **rifle** from the rack. Hunt a deer

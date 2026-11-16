@@ -1731,6 +1731,16 @@ class Game:
             elif ev == 'roar':
                 self.audio.play3d('goat_roar', gt.x, gt.z, 90, 1.0)
                 self.audio.play('stinger', 0.6)
+            elif ev == 'lost':
+                self.audio.play3d('breath', gt.x, gt.z, 25, 0.9)
+                if 'goat_lost' not in self.flags:
+                    self.flags.add('goat_lost')
+                    self.message("He hunts light and movement. Lantern off. Don't move.", 5)
+            elif ev == 'leave':
+                self.audio.play3d('mstep', gt.x, gt.z, 40, 0.7)
+                if 'goat_leave' not in self.flags:
+                    self.flags.add('goat_leave')
+                    self.message("He's going.", 3)
             elif ev == 'kill':
                 self.kill()
         gt.events = []
@@ -1747,6 +1757,8 @@ class Game:
         tf = clamp(1 - d / 22, 0, 1)
         if gt.state == 'chase':
             tf = max(tf, 0.55)
+        elif gt.state == 'search':
+            tf = max(tf, 0.7)      # he is standing right there, staring
         self.fear += (tf - self.fear) * min(1.0, dt * 3)
         self.audio.loop3d('breath', gt.x, gt.z, 20, 1.0)
         if self.fear > 0.15:
@@ -2351,7 +2363,7 @@ class Game:
         gt = self.goat
         if gt is not None:
             ph, amt, roll = gt.snap
-            parts.append(C2_goat_parts(gt.x, gt.y, gt.z, gt.yaw, ph, amt, roll, gt.state == 'chase', self.time))
+            parts.append(C2_goat_parts(gt.x, gt.y, gt.z, gt.yaw, ph, amt, roll, gt.state in ('chase', 'search'), self.time))
         if self.deer is not None and self.ch2_phase == 'hunt':
             parts.append(self.deer.parts())
         if self.chaser2 is not None and self.ch2_phase == 'run':

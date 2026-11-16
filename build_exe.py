@@ -44,9 +44,10 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "New title menu: CONTINUE picks up where you left off; PLAY opens chapter select.",
-    "Chapter 2 stays locked until you beat Chapter 1.",
-    "Progress saves. Checkpoints: reaching the sewers (Ch. 1), 20/20 firewood (Ch. 2).",
+    "Twice as much firewood out in the woods (68 bundles), so it's much easier to find.",
+    "The Goat Man now hunts LIGHT and MOVEMENT.",
+    "Lantern off and stand still: he stops, stares toward you, looks around... and leaves.",
+    "Move or turn the light back on while he's searching, and he's on you again.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

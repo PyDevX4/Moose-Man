@@ -17,6 +17,7 @@ RIVERS = [
     [(22, 104), (32, 82), (20, 60), (36, 38), (52, 18), (55, -24)],
 ]
 WOOD_NEEDED = 20
+WOOD_SPOTS = 68                   # twice as many bundles as before, so they are easier to come across
 CABIN_HX, CABIN_HZ = 2.5, 2.0     # wall centre lines
 DOOR_HINGE_X = -0.5
 WOODPILE = (1.55, 2.9)            # on the porch, right of the door
@@ -177,12 +178,12 @@ class World2:
         for x, z in landmark_spots:
             self.wood_spots.append((x, float(terrain_h2(x, z)), z, rng.random() * 6.28))
         tries = 0
-        while len(self.wood_spots) < 34 and tries < 5000:
+        while len(self.wood_spots) < WOOD_SPOTS and tries < 8000:
             tries += 1
             x, z = self.random_land(rng, margin=10)
             if math.hypot(x, z) < 18:
                 continue
-            if any(math.hypot(x - wx, z - wz) < 13 for wx, _, wz, _ in self.wood_spots):
+            if any(math.hypot(x - wx, z - wz) < 8.5 for wx, _, wz, _ in self.wood_spots):
                 continue
             self.wood_spots.append((x, float(terrain_h2(x, z)), z, rng.random() * 6.28))
         # trees, thick at the edges
@@ -719,8 +720,19 @@ def snow_mesh(n=900, seed=5):
 
 # ---------------------------------------------------------------------- the Goat Man, hunting
 class GoatHunter:
-    """Roams the snowy map looking for you. The lantern lets him see you from
-    much further away; running is loud; crouching in the dark hides you."""
+    """Roams the map looking for you. He hunts LIGHT and MOVEMENT.
+
+    Your lantern gives you away from far off. With it out, he only notices you
+    when you move (running carries furthest, a crouched creep barely at all).
+    Lantern out and standing still, you are invisible to him: if he was chasing
+    you he stops, stares toward where you were, looks around, and leaves.
+    """
+    LIGHT_RANGE = 32.0
+    RUN_RANGE = 18.0
+    WALK_RANGE = 11.0
+    CREEP_RANGE = 4.5
+    STARE_TIME = 2.6
+    LOOK_TIME = 4.2
 
     def __init__(self, w):
         self.w = w
@@ -757,7 +769,7 @@ class GoatHunter:
         self.target = None
 
     def hear(self, x, z, radius):
-        if self.grace > 0 or self.state == 'chase':
+        if self.grace > 0 or self.state in ('chase', 'search'):
             return
         if math.hypot(x - self.x, z - self.z) < radius:
             self.state = 'investigate'
@@ -769,16 +781,27 @@ class GoatHunter:
         px, pz = player.x, player.z
         dx, dz = px - self.x, pz - self.z
         dist = math.hypot(dx, dz)
+        # ---- what gives you away: light, or movement
+        pspeed = math.hypot(getattr(player, 'vx', 0.0), getattr(player, 'vz', 0.0))
+        moving = pspeed > 0.35
+        if lantern_on:
+            reach, wide = self.LIGHT_RANGE, True          # a light in the dark is seen from any angle
+        elif not moving:
+            reach, wide = 0.0, False                      # dark and still: invisible
+        elif player.crouch > 0.5:
+            reach, wide = self.CREEP_RANGE, False
+        elif getattr(player, 'sprinting', False):
+            reach, wide = self.RUN_RANGE, True
+        else:
+            reach, wide = self.WALK_RANGE, False
         self.sense_t -= dt
         if self.sense_t <= 0 and self.grace <= 0:
-            self.sense_t = 0.2
-            vision = 26.0 if lantern_on else 10.0
-            if player.crouch > 0.5:
-                vision *= 0.6
+            self.sense_t = 0.15
             fx, fz = math.sin(self.yaw), math.cos(self.yaw)
-            facing = (fx * dx + fz * dz) / max(dist, 1e-4) > 0.1 or dist < 6.0
-            if dist < vision and (facing or self.state == 'chase'):
-                if self.state != 'chase':
+            facing = (fx * dx + fz * dz) / max(dist, 1e-4)
+            seen = dist < reach and (wide or facing > 0.1 or dist < 6.0 or self.state in ('chase', 'search'))
+            if seen:
+                if self.state not in ('chase',):
                     self.events.append('roar')
                 self.state = 'chase'
                 self.seen_t = 0.0
@@ -788,14 +811,40 @@ class GoatHunter:
         if st == 'chase':
             speed = 4.1
             self.seen_t += dt
-            if dist < 34 and self.seen_t < 0.25:
+            if self.seen_t < 0.3:
                 self.target = (px, pz)
-            if self.seen_t > 5.0 or dist > 40:
-                self.state = 'investigate'
-                self.target = self.last_seen
-                self.timer = 0.0
-            if dist < 1.45:
+            if dist < 1.45 and self.seen_t < 0.6:
                 self.events.append('kill')
+            elif self.seen_t > 0.7:
+                # you went dark and still: he stops dead, where he is
+                self.state = 'search'
+                self.timer = 0.0
+                self.target = None
+                self.search_yaw = math.atan2(self.last_seen[0] - self.x, self.last_seen[1] - self.z) \
+                    if self.last_seen else self.yaw
+                self.events.append('lost')
+        elif st == 'search':
+            # stare toward where you were... then look around... then give up and go
+            self.timer += dt
+            if self.timer < self.STARE_TIME:
+                want = self.search_yaw
+            else:
+                k = self.timer - self.STARE_TIME
+                want = self.search_yaw + 1.25 * math.sin(k * 1.5) + 0.4 * math.sin(k * 3.7)
+            d = (want - self.yaw + math.pi) % (2 * math.pi) - math.pi
+            self.yaw += d * min(1.0, dt * 4)
+            if self.timer > self.STARE_TIME + self.LOOK_TIME:
+                away = math.atan2(self.x - px, self.z - pz) + self.rng.uniform(-0.6, 0.6)
+                self.target = (clamp(self.x + math.sin(away) * 38, -HALF + 8, HALF - 8),
+                               clamp(self.z + math.cos(away) * 38, -HALF + 8, HALF - 8))
+                self.state = 'leave'
+                self.events.append('leave')
+        elif st == 'leave':
+            speed = 2.4
+            if self.target is None or math.hypot(self.target[0] - self.x, self.target[1] - self.z) < 2.0:
+                self.state = 'roam'
+                self.target = None
+                self.timer = self.rng.uniform(6.0, 12.0)    # he wanders a while before coming back round
         elif st == 'investigate':
             speed = 2.8
             if self.target is None or math.hypot(self.target[0] - self.x, self.target[1] - self.z) < 1.5:
