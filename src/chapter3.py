@@ -45,6 +45,17 @@ class Level:
             for c in range(min(c0, c1), max(c0, c1) + 1):
                 self.g[r][c] = ch
 
+    def grow_map(self, add_cols, add_rows, seed, barrier='', keep_out=(), corridor_kinds='..,'):
+        """Three times the floor: caverns and shafts grown into the rock around the hand-made map."""
+        from gridgrow import grow, pad
+        pad(self.g, add_cols, add_rows)
+        self.cols += add_cols
+        self.rows += add_rows
+        self.grown = grow(self.g, random.Random(seed), 3.0, passable='.,MEXRGH', connect_to='.,', room_kinds='.',
+                          corridor_kinds=corridor_kinds, barrier=barrier, keep_out=keep_out,
+                          bounds=(1, 1, self.cols - 2, self.rows - 2), room_w=(3, 9), room_h=(3, 8), tries=40000)
+        return self.grown
+
     def kind(self, c, r):
         if 0 <= r < self.rows and 0 <= c < self.cols:
             return self.g[r][c]
@@ -306,15 +317,31 @@ class Level:
             return (cx - C / 2 + off, y, cz), (1, 0, 0)
         return (cx + C / 2 - off, y, cz), (-1, 0, 0)
 
-    def add_lever(self, b, c, r, side):
+    def lever_spot(self, c, r, side):
         p, n = self.wall_point(c, r, side, self.y0 + 1.15, off=0.22)
-        yaw = math.atan2(n[0], n[2])
-        m = T(*p) @ RY(yaw)
-        b.box((0, 0, -0.12), (0.4, 0.7, 0.1), L.METAL, (0.5, 0.48, 0.45), m=m)
-        b.box((0, 0.42, -0.1), (0.5, 0.08, 0.14), L.METAL, (0.85, 0.7, 0.2), m=m)       # yellow warning bar
-        # a cable running up the wall to the ceiling
-        b.box((0.14, 1.2, -0.15), (0.04, 2.0, 0.04), L.BLACK, m=m)
+        return p, math.atan2(n[0], n[2])
+
+    def add_lever(self, b, c, r, side):
+        """A lever on a wall. Its housing is drawn on its own (see lever_box_mesh), so a new
+        game can move it somewhere else."""
+        p, yaw = self.lever_spot(c, r, side)
         self.levers.append({'pos': p, 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': -0.8})
+
+    def wall_spots(self, kinds='.', rows=None, cols=None):
+        """Every (c, r, side) where a lever could hang: a floor cell next to rock."""
+        out = []
+        for r in range(self.rows):
+            if rows and not (rows[0] <= r <= rows[1]):
+                continue
+            for c in range(self.cols):
+                if cols and not (cols[0] <= c <= cols[1]):
+                    continue
+                if self.g[r][c] not in kinds:
+                    continue
+                for side, (dc, dr) in (('N', (0, 1)), ('S', (0, -1)), ('E', (1, 0)), ('W', (-1, 0))):
+                    if self.kind(c + dc, r + dr) == '#':
+                        out.append((c, r, side))
+        return out
 
 
 # ---------------------------------------------------------------------- the two levels
@@ -351,6 +378,8 @@ def build_upper():
     lv.carve(3, 31, 5, 31, ',')
     lv.carve(14, 40, 24, 40, ',')            # a long gallery off the great hall
     lv.elevator = (17, 18)
+    keep = {(c, r) for r in range(0, 12) for c in range(6, 22)} | {(c, r) for r in range(15, 22) for c in range(10, 20)}
+    lv.grow_map(36, 30, seed=3031, keep_out=keep)
     lv.finish()
     lv.spawn = lv.center(14, 6)              # where you lie down
     lv.safe = lv.center(14, 18)              # the office: respawn point
@@ -395,6 +424,8 @@ def build_lower():
     lv.carve(20, SH + 40, 20, SH + 40, 'X')    # ...and out
     lv.elevator = (15, 1)
     lv.exit = (20, SH + 40)
+    keep = {(c, r) for r in range(0, SH + 9) for c in range(12, 19)} | {(c, r) for r in range(SH + 35, SH + 42) for c in range(17, 24)}
+    lv.grow_map(34, 34, seed=4041, barrier='R', keep_out=keep)
     lv.finish()
     lv.spawn = lv.center(15, 2)
     lv.safe = lv.center(15, 3)
@@ -462,6 +493,7 @@ def dress_upper(lv, b):
         x, z = lv.center(rng.randint(10, 18), rng.randint(5, 7))
         m = T(x + rng.uniform(-0.8, 0.8), y0 + 0.04, z + rng.uniform(-0.8, 0.8)) @ RY(rng.random() * 6)
         b.box((0, 0, 0), (rng.uniform(0.2, 0.5), 0.05, 0.05), L.BONE, (0.85, 0.8, 0.75), m=m)
+    _grown_lights(lv, b)
     _outside(lv, b)
 
 
@@ -534,10 +566,20 @@ def dress_lower(lv, b):
     b.facing_quad((ex, y0 + 1.1, ez + C / 2 - 0.05), (0, 0, -1), 1.8, 2.2, L.GLOW + EMIS, (0.55, 0.6, 0.7))
     lv.lights.append({'pos': (ex, y0 + 1.5, ez), 'rad': 9.0, 'col': (0.35, 0.4, 0.5), 'powered': False})
     # old crates and an ore cart
+    _grown_lights(lv, b)
     for (c, r) in ((11, 8), (19, 12), (3, 17), (26, 20)):
         x, z = lv.center(c, r + SH)
         b.box((x, y0 + 0.45, z), (0.9, 0.9, 0.9), L.WOOD, (0.65, 0.6, 0.5))
         lv.boxes.append((x - 0.45, z - 0.45, x + 0.45, z + 0.45))
+
+
+def _grown_lights(lv, b):
+    rng = random.Random(lv.cols * 7 + lv.rows)
+    for (c0, r0, c1, r1, _k) in getattr(lv, 'grown', ()):
+        if rng.random() < 0.4:
+            c, r = (c0 + c1) // 2, (r0 + r1) // 2
+            x, z = lv.center(c, r)
+            lv.bulb(b, x, lv.y0 + 4.0, z, float(lv.ceil[r, c]), rad=10.0)
 
 
 def _outside(lv, b):
@@ -630,6 +672,15 @@ def lever_handle_mesh():
     b = MeshBuilder()
     b.box((0, 0.22, 0), (0.06, 0.45, 0.06), L.METAL, (0.55, 0.55, 0.55))
     b.box((0, 0.46, 0), (0.14, 0.1, 0.1), L.BLACK)
+    return b.array()
+
+
+def lever_box_mesh():
+    """The housing a lever handle sits in (drawn at the lever's position and facing)."""
+    b = MeshBuilder()
+    b.box((0, 0, -0.12), (0.4, 0.7, 0.1), L.METAL, (0.5, 0.48, 0.45))
+    b.box((0, 0.42, -0.1), (0.5, 0.08, 0.14), L.METAL, (0.85, 0.7, 0.2))       # yellow warning bar
+    b.box((0.14, 1.2, -0.15), (0.04, 2.0, 0.04), L.BLACK)                      # a cable up the wall
     return b.array()
 
 

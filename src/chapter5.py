@@ -29,6 +29,13 @@ GATE_H = 18.0
 SHOTGUN_POS = (0.45, 0.32, 21.0)
 EAST_DOOR = (HALL_X, 88.0)
 BEAST_HOME = (0.0, 88.0)
+# the hall before the fight: shelves round the walls (one has the key), the admin booth in the corner
+SHELVES = [(-39.3, 58.0, math.pi / 2), (-39.3, 70.0, math.pi / 2), (-39.3, 80.0, math.pi / 2), (-39.3, 112.0, math.pi / 2),
+           (-20.0, 123.3, math.pi), (-13.0, 123.3, math.pi), (13.0, 123.3, math.pi), (20.0, 123.3, math.pi),
+           (-20.0, 44.7, 0.0), (-12.0, 44.7, 0.0), (12.0, 44.7, 0.0), (39.3, 66.0, -math.pi / 2), (39.3, 108.0, -math.pi / 2)]
+BOOTH = (28.0, 44.2, 39.8, 50.6)          # x0, z0, x1, z1
+BOOTH_DOOR = (28.0, 47.5)                 # in the booth's west wall
+BUTTON = (39.62, 1.3, 47.5)
 
 # ---------------------------------------------------------------------- the beast's build
 ES = 2.8                # the Elk body, scaled up
@@ -313,20 +320,44 @@ class World5:
         self.circles = []         # (x, z, r) solid round things: boilers, columns
         self.boxes = []           # (x0, z0, x1, z1)
         self.gate_open = 0.0
-        self.sealed = False       # the grate behind you, once it has seen you
+        self.sealed = False       # (old) the grate behind you
+        import factory5
+        self.fac = factory5.FactoryLevel()
+        self.booth_open = 0.0     # the admin booth's door
+        self.east_gate = 0.0      # the gate he comes out of
 
     # ---- collision
+    def region(self, x, z):
+        import factory5 as F5
+        if z >= HALL_Z0 and x > -HALL_X:
+            return 'hall'
+        if z < HALL_Z0 and x >= -TUN_HW - 0.001:
+            return 'tunnel'
+        if -2.0 <= x < -TUN_HW and F5.TUN_OPEN[0] <= z <= F5.TUN_OPEN[1]:
+            return 'link'
+        return 'fac'
+
     def collide(self, x, z, rad, big=False):
+        import factory5 as F5
+        if not big:
+            reg = self.region(x, z)
+            if reg == 'tunnel':
+                z0, z1 = F5.TUN_OPEN
+                lo = -TUN_HW + rad if not (z0 + rad < z < z1 - rad) else -TUN_HW - 1.0
+                x = clamp(x, lo, TUN_HW - rad)
+                z = clamp(z, 0.6 + rad, TUN_Z1 - 0.5 - rad)
+                return x, z
+            if reg == 'link':
+                z0, z1 = F5.TUN_OPEN
+                return x, clamp(z, z0 + rad, z1 - rad)
+            if reg == 'fac':
+                return self.fac.collide(x, z, rad)
+        door_open = self.fac.big_open > 0.8
         for _ in range(2):
-            if z < TUN_Z1 and not self.sealed and not big:
-                x = clamp(x, -TUN_HW + rad, TUN_HW - rad)
-                z = max(z, 0.6 + rad)
-            else:
-                if z < HALL_Z0 + rad:
-                    if self.sealed or big or abs(x) > TUN_HW - rad:
-                        z = HALL_Z0 + rad
-                if z >= HALL_Z0 + rad - 0.001:
-                    x = clamp(x, -HALL_X + rad, HALL_X - rad)
+            if True:
+                z = max(z, HALL_Z0 + rad)
+                through = door_open and F5.BIG_Z[0] + rad < z < F5.BIG_Z[1] - rad and not big
+                x = clamp(x, (-HALL_X - 1.0) if through else (-HALL_X + rad), HALL_X - rad)
                 gate_through = self.gate_open > 0.75 and abs(x) < GATE_HW - rad and not big
                 if not gate_through:
                     z = min(z, HALL_Z1 - rad)
@@ -338,7 +369,10 @@ class World5:
                 if d < r + rad and d > 1e-6:
                     x = cx + dx / d * (r + rad)
                     z = cz + dz / d * (r + rad)
-            for x0, z0, x1, z1 in self.boxes:
+            boxes = self.boxes
+            if self.booth_open < 0.8:
+                boxes = boxes + [(BOOTH[0] - 0.12, 46.4, BOOTH[0] + 0.12, 48.6)]
+            for x0, z0, x1, z1 in boxes:
                 nx, nz = clamp(x, x0, x1), clamp(z, z0, z1)
                 dx, dz = x - nx, z - nz
                 d2 = dx * dx + dz * dz
@@ -364,7 +398,31 @@ class World5:
         self._tunnel(b, rng)
         self._hall(b, rng)
         self._outside(b, rng)
+        self._hall_extras(b)
+        self.fac.build_mesh(b)
+        self.lights += self.fac.lights5
         return b.array()
+
+    def _hall_extras(self, b):
+        """Shelves round the walls, and the admin booth in the corner."""
+        import factory5 as F5
+        shelf = F5.shelf_mesh()
+        for (x, z, yaw) in SHELVES:
+            M = T(x, 0, z) @ RY(yaw)
+            v = shelf.copy()
+            P = np.c_[v[:, 0:3], np.ones(len(v))] @ M.T
+            Nn = v[:, 3:6] @ M[:3, :3].T
+            v[:, 0:3] = P[:, 0:3]
+            v[:, 3:6] = Nn
+            b.add_array(v)
+            if abs(math.sin(yaw)) < 0.5:
+                self.boxes.append((x - 1.25, z - 0.35, x + 1.25, z + 0.35))
+            else:
+                self.boxes.append((x - 0.35, z - 1.25, x + 0.35, z + 1.25))
+        x0, z0, x1, z1 = BOOTH
+        b.add_array(F5.booth_mesh(x0, z0, x1, z1))
+        self.boxes += [(x0, z1 - 0.12, x1, z1 + 0.12), (x0 - 0.12, z0, x0 + 0.12, 46.4), (x0 - 0.12, 48.6, x0 + 0.12, z1),
+                       (x1 - 1.75, 45.6, x1 - 0.7, 49.2)]
 
     def _tunnel(self, b, rng):
         hw, h = TUN_HW, TUN_H
@@ -373,15 +431,24 @@ class World5:
         b.quad_world((-hw, 0, z0), (hw, 0, z0), (hw, 0, z1), (-hw, 0, z1), L.MUD, (0.75, 0.73, 0.7), 0.5)
         b.quad_world((-0.35, 0.012, z0), (0.35, 0.012, z0), (0.35, 0.012, z1), (-0.35, 0.012, z1), L.WATER, (0.6, 0.62, 0.55), 0.5)
         b.quad_world((-hw, h, z0), (hw, h, z0), (hw, h, z1), (-hw, h, z1), L.CONCRETE, (0.45, 0.45, 0.44), 0.5)
-        for sx in (-hw, hw):
-            b.quad_world((sx, 0, z0), (sx, 0, z1), (sx, h, z1), (sx, h, z0), L.CONCRETE, conc, 0.5, axis='x')
+        import factory5 as F5
+        oz0, oz1 = F5.TUN_OPEN
+        b.quad_world((hw, 0, z0), (hw, 0, z1), (hw, h, z1), (hw, h, z0), L.CONCRETE, conc, 0.5, axis='x')
+        for za, zb in ((z0, oz0), (oz1, z1)):
+            b.quad_world((-hw, 0, za), (-hw, 0, zb), (-hw, h, zb), (-hw, h, za), L.CONCRETE, conc, 0.5, axis='x')
+        b.quad_world((-hw, h - 0.05, oz0), (-hw, h - 0.05, oz1), (-hw, h, oz1), (-hw, h, oz0), L.CONCRETE, conc, 0.5, axis='x')
+        b.facing_quad((0, h / 2, z1 - 0.3), (0, 0, -1), hw * 2, h, L.GRATE, (0.5, 0.45, 0.4))
         # bevelled corners so it reads as a pipe, and ring joints every 2.5 m
-        for sx in (-1, 1):
-            b.box((sx * (hw - 0.2), h - 0.2, (z0 + z1) / 2), (0.5, 0.5, z1 - z0), L.CONCRETE, (0.5, 0.5, 0.48), m=None)
-            b.box((sx * (hw - 0.15), 0.15, (z0 + z1) / 2), (0.35, 0.3, z1 - z0), L.CONCRETE, (0.55, 0.55, 0.52))
+        b.box((hw - 0.2, h - 0.2, (z0 + z1) / 2), (0.5, 0.5, z1 - z0), L.CONCRETE, (0.5, 0.5, 0.48), m=None)
+        b.box((hw - 0.15, 0.15, (z0 + z1) / 2), (0.35, 0.3, z1 - z0), L.CONCRETE, (0.55, 0.55, 0.52))
+        for za, zb in ((z0, oz0), (oz1, z1)):
+            b.box((-hw + 0.2, h - 0.2, (za + zb) / 2), (0.5, 0.5, zb - za), L.CONCRETE, (0.5, 0.5, 0.48))
+            b.box((-hw + 0.15, 0.15, (za + zb) / 2), (0.35, 0.3, zb - za), L.CONCRETE, (0.55, 0.55, 0.52))
         for k in range(int((z1 - z0) / 2.5)):
             z = z0 + 1.0 + k * 2.5
             for sx in (-1, 1):
+                if sx < 0 and oz0 - 0.3 < z < oz1 + 0.3:
+                    continue
                 b.box((sx * (hw - 0.05), h / 2, z), (0.12, h, 0.25), L.CONCRETE, (0.48, 0.48, 0.46))
             b.box((0, h - 0.05, z), (hw * 2, 0.12, 0.25), L.CONCRETE, (0.48, 0.48, 0.46))
         # the back end: a rusted grate, nothing but black behind it
@@ -422,14 +489,23 @@ class World5:
                     b.quad_world((pts[i], 0, z), (pts[i + 1], 0, z), (pts[i + 1], H, z), (pts[i], H, z), L.BRICK, brick, 0.25)
             for a, b_, hh in holes:
                 b.quad_world((a, hh, z), (b_, hh, z), (b_, H, z), (a, H, z), L.BRICK, brick, 0.25)
-        wall_z(Z0, -X, X, [(-TUN_HW, TUN_HW, TUN_H)], 1)
+        wall_z(Z0, -X, X, [], 1)
         wall_z(Z1, -X, X, [(-GATE_HW, GATE_HW, GATE_H)], -1)
         dz0, dz1 = EAST_DOOR[1] - 4.0, EAST_DOOR[1] + 4.0
         for zz0, zz1 in ((Z0, dz0), (dz1, Z1)):
             b.quad_world((X, 0, zz0), (X, 0, zz1), (X, H, zz1), (X, H, zz0), L.BRICK, brick, 0.25, axis='x')
         b.quad_world((X, 9.0, dz0), (X, 9.0, dz1), (X, H, dz1), (X, H, dz0), L.BRICK, brick, 0.25, axis='x')
         b.box((X + 3.0, 4.5, EAST_DOOR[1]), (6.0, 9.0, 8.0), L.BLACK)                 # nothing but dark past the door
-        b.quad_world((-X, 0, Z0), (-X, 0, Z1), (-X, H, Z1), (-X, H, Z0), L.BRICK, brick, 0.25, axis='x')
+        for zz in (dz0 - 0.3, dz1 + 0.3):
+            b.box((X - 0.3, 4.6, zz), (0.7, 9.2, 0.7), L.METAL, (0.4, 0.34, 0.3))
+        import factory5 as F5
+        bz0, bz1 = F5.BIG_Z
+        for zz0, zz1 in ((Z0, bz0), (bz1, Z1)):
+            b.quad_world((-X, 0, zz0), (-X, 0, zz1), (-X, H, zz1), (-X, H, zz0), L.BRICK, brick, 0.25, axis='x')
+        b.quad_world((-X, 10.0, bz0), (-X, 10.0, bz1), (-X, H, bz1), (-X, H, bz0), L.BRICK, brick, 0.25, axis='x')
+        for zz in (bz0 - 0.4, bz1 + 0.4):
+            b.box((-X + 0.3, 5.2, zz), (0.8, 10.4, 0.8), L.METAL, (0.4, 0.34, 0.3))
+        b.box((-X + 0.3, 10.6, (bz0 + bz1) / 2), (0.8, 1.2, bz1 - bz0 + 1.6), L.METAL, (0.4, 0.34, 0.3))
         # the drain mouth's frame, and the gate's
         for sx in (-1, 1):
             b.box((sx * (GATE_HW + 0.6), GATE_H / 2, Z1 - 0.4), (1.2, GATE_H, 1.6), L.METAL, (0.4, 0.34, 0.3))

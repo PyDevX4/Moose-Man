@@ -38,6 +38,31 @@ def key_mesh():
     return b.array()
 
 
+def c1_post_mesh():
+    """A flood-gate release lever's concrete post, housing, warning bar and red lamp."""
+    b = MeshBuilder()
+    b.box((0, 0.7, -0.15), (0.5, 1.4, 0.3), L.CONCRETE, (0.7, 0.7, 0.68))
+    b.box((0, 1.15, 0.02), (0.4, 0.6, 0.06), L.METAL, (0.55, 0.5, 0.45))
+    b.box((0, 1.5, 0.03), (0.46, 0.07, 0.1), L.METAL, (0.85, 0.7, 0.2))
+    b.box((0, 1.62, -0.15), (0.12, 0.12, 0.12), L.GLOW + EMIS, (1.0, 0.15, 0.1))
+    return b.array()
+
+
+def pick_spread(rng, cands, n, min_d, pos):
+    """n random candidates at least min_d apart (relaxing if the map is tight)."""
+    cands = list(cands)
+    rng.shuffle(cands)
+    for d in (min_d, min_d * 0.6, min_d * 0.3, 0.0):
+        out = []
+        for c in cands:
+            p = pos(c)
+            if all(math.hypot(p[0] - q[0], p[1] - q[1]) >= d for q in (pos(o) for o in out)):
+                out.append(c)
+                if len(out) == n:
+                    return out
+    return cands[:n]
+
+
 def ray_sphere(o, d, c, r):
     ox, oy, oz = o[0] - c[0], o[1] - c[1], o[2] - c[2]
     bb = ox * d[0] + oy * d[1] + oz * d[2]
@@ -57,8 +82,103 @@ class ExtrasMixin:
         self.m_key = Mesh(self.ctx, prog, key_mesh())
         self.m_cart = Mesh(self.ctx, prog, C3.cart_mesh())
         self.m_plank = Mesh(self.ctx, prog, C3.plank_mesh())
+        self.m_lever_box = Mesh(self.ctx, prog, C3.lever_box_mesh())
+        self.m_c1post = Mesh(self.ctx, prog, c1_post_mesh())
+        self.find_spawn_spots()
+        self.run_seed = 1
         self.mon_stun = {}
         self.reset_extras()
+
+    # ================================================================== random spawns
+    def find_spawn_spots(self):
+        """Every place each puzzle piece could go. Worked out once; each new game picks from them."""
+        from gridgrow import zones_of
+        w = self.world
+        cc = W.cell_center
+        z1 = zones_of(w.g, '.~tWSX', 'WS')
+        pre, post = z1.get((9, 18)), z1.get((8, 50))
+        self.spots_valve, self.spots_key = [], []
+        lx, _, lz = w.ladder_pos
+        for r in range(W.ROWS):
+            for c in range(W.COLS):
+                if w.g[r][c] != '.':
+                    continue
+                zz = z1.get((c, r))
+                if zz == pre and r >= 21:
+                    for side, (dc, dr) in (('N', (0, 1)), ('S', (0, -1)), ('E', (1, 0)), ('W', (-1, 0))):
+                        if w.kind(c + dc, r + dr) == '#':
+                            self.spots_valve.append((c, r, side))
+                elif zz == post:
+                    x, z = cc(c, r)
+                    if math.hypot(x - lx, z - lz) > 24:
+                        self.spots_key.append((c, r))
+        # the release levers: somewhere off the trail in the woods, clear of trees
+        rng = random.Random(77)
+        self.spots_c1lever = []
+        for _ in range(4000):
+            x, z = rng.uniform(-44, 44), rng.uniform(-44, 38)
+            if float(W.path_dist(x, z)) < 6 or w.near_tree(x, z, 1.8) or math.hypot(x, z - 48) < 18:
+                continue
+            if math.hypot(x - W.START[0], z - W.START[1]) < 12:
+                continue
+            self.spots_c1lever.append((x, z, rng.uniform(-math.pi, math.pi)))
+            if len(self.spots_c1lever) >= 80:
+                break
+        # the mine: four levers up top, the cart's power lever in the yard
+        up = self.lv_up
+        self.spots_up = [s for s in up.wall_spots('.') if s[1] >= 12 and not (10 <= s[0] <= 18 and 15 <= s[1] <= 21)]
+        low = self.lv_low
+        zl = zones_of(low.g, '.,MEXRGH', 'R')
+        yard = zl.get((15, 5))
+        self.spots_low = [s for s in low.wall_spots('.') if zl.get((s[0], s[1])) == yard and abs(s[0] - 15) > 1]
+        # the deep sewer's fuses: anywhere in the sewers around the hall (not the hall itself)
+        lv4 = self.lv4
+        z4 = zones_of(lv4.g, '.,MEXRGH', 'GH')
+        hc = (C4.HALL[0] + C4.HALL[2]) // 2, (C4.HALL[1] + C4.HALL[3]) // 2
+        hz_ = z4.get(hc)
+        self.spots_fuse = [(c, r) for r in range(lv4.rows) for c in range(lv4.cols)
+                           if lv4.g[r][c] in '.,' and z4.get((c, r)) == hz_ and not C4.inside(C4.HALL, c, r)]
+
+    def randomize_puzzles(self, seed):
+        """Put every puzzle piece somewhere new. The same seed gives the same layout,
+        which is how co-op players all get the same game."""
+        self.run_seed = seed
+        cc = W.cell_center
+        w = self.world
+        # chapter 1: five valves, two release levers, the ladder key
+        rng = random.Random(seed * 10 + 1)
+        picks = pick_spread(rng, self.spots_valve, len(w.valves), 18.0, lambda s: cc(s[0], s[1]))
+        for v, (c, r, side) in zip(w.valves, picks):
+            p, n = w.wall_point(c, r, side, 0.0, W.SEWER_FLOOR + 1.25, off=0.32)
+            v.update(pos=p, yaw=math.atan2(n[0], n[2]), cell=(c, r), side=side)
+        picks = pick_spread(rng, self.spots_c1lever, len(w.c1_levers), 30.0, lambda s: (s[0], s[1]))
+        for lev, (x, z, yaw) in zip(w.c1_levers, picks):
+            w.place_c1_lever(lev, x, z, yaw)
+        if self.spots_key:
+            c, r = rng.choice(self.spots_key)
+            x, z = cc(c, r)
+            w.key_pos = (x + rng.uniform(-0.5, 0.5), W.SEWER_FLOOR + 0.06, z + rng.uniform(-0.5, 0.5))
+        # chapter 2: which firewood is out there
+        rng = random.Random(seed * 10 + 2)
+        pool = self.w2.wood_pool
+        self.w2.wood_spots = pool[:3] + rng.sample(pool[3:], min(len(pool) - 3, C2.WOOD_SPOTS - 3))
+        # chapter 3: the levers
+        rng = random.Random(seed * 10 + 3)
+        for lv, spots, d in ((self.lv_up, self.spots_up, 30.0), (self.lv_low, self.spots_low, 0.0)):
+            picks = pick_spread(rng, spots, len(lv.levers), d, lambda s, lv=lv: lv.center(s[0], s[1]))
+            for lev, (c, r, side) in zip(lv.levers, picks):
+                p, yaw = lv.lever_spot(c, r, side)
+                lev.update(pos=p, yaw=yaw)
+        # chapter 4: the fuses
+        rng = random.Random(seed * 10 + 4)
+        lv4 = self.lv4
+        picks = pick_spread(rng, self.spots_fuse, len(lv4.fuses), 20.0, lambda s: lv4.center(*s))
+        for fu, (c, r) in zip(lv4.fuses, picks):
+            x, z = lv4.center(c, r)
+            fu.update(pos=(x + rng.uniform(-0.5, 0.5), lv4.y0 + 0.05, z + rng.uniform(-0.5, 0.5)), yaw=rng.random() * 6)
+        # chapter 5's pieces are placed by its own level
+        if hasattr(self, 'randomize_ch5'):
+            self.randomize_ch5(random.Random(seed * 10 + 5))
 
     def reset_extras(self):
         w = self.world
@@ -208,13 +328,14 @@ class ExtrasMixin:
         w = self.world
         if cam[2] < 70:
             for lev in w.c1_levers:
+                r.draw(self.m_c1post, model=T(*lev['base']) @ RY(lev['yaw']))
                 r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
             r.draw(self.m_grate1, model=T(0.0, 2.4 * w.grate_open, 47.72))
-        if cam[2] > 120:
+        if cam[2] > 100:
             gx, gz = self.keygate_spot()
             r.draw(self.m_keygate, model=T(gx, W.SEWER_FLOOR + 3.0 * w.keygate_open, gz + 0.6))
-            if w.key_pos and not self.key_taken:
-                r.draw(self.m_key, model=T(*w.key_pos) @ RY(0.7))
+        if w.key_pos and not self.key_taken:
+            r.draw(self.m_key, model=T(*w.key_pos) @ RY(0.7))
 
     def c1_label(self, kind, key):
         if kind == 'c1lever':

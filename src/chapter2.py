@@ -10,20 +10,25 @@ from engine import MeshBuilder, T, S, RX, RY, RZ
 from textures import L, EMIS
 
 WL = 0.0                      # water level (rivers and the lake)
-HALF = 100.0                  # the map runs from -HALF to +HALF on both axes
-LAKE = (52.0, -42.0, 28.0, 20.0)   # centre x, centre z, radius x, radius z
+GROW = 3.0 ** 0.5               # the forest is three times the area it was
+HALF = 100.0 * GROW             # the map runs from -HALF to +HALF on both axes
+LAKE = (52.0 * GROW, -42.0 * GROW, 28.0 * GROW, 20.0 * GROW)   # centre x, centre z, radius x, radius z
 RIVERS = [
-    [(-104, 62), (-78, 48), (-55, 56), (-36, 36), (-28, 12), (-20, -12), (4, -26), (27, -36)],
-    [(22, 104), (32, 82), (20, 60), (36, 38), (52, 18), (55, -24)],
+    [(x * GROW, z * GROW) for x, z in
+     [(-104, 62), (-78, 48), (-55, 56), (-36, 36), (-28, 12), (-20, -12), (4, -26), (27, -36)]],
+    [(x * GROW, z * GROW) for x, z in [(22, 104), (32, 82), (20, 60), (36, 38), (52, 18), (55, -24)]],
+    # a third creek out in the new country to the north-west
+    [(-170.0, -60.0), (-130.0, -80.0), (-95.0, -70.0), (-70.0, -100.0), (-60.0, -175.0)],
 ]
 WOOD_NEEDED = 20
-WOOD_SPOTS = 68                   # twice as many bundles as before, so they are easier to come across
+WOOD_SPOTS = 200                  # spread over a forest three times the size
+WOOD_POOL = 560                   # ...picked fresh each game from this many clear spots
 CABIN_HX, CABIN_HZ = 2.5, 2.0     # wall centre lines
 DOOR_HINGE_X = -0.5
 WOODPILE = (1.55, 2.9)            # on the porch, right of the door
 RESPAWN = (0.0, 5.2)              # in front of the cabin, facing away from it
-DOCK = (31.0, -30.0)
-STAND = (-46.0, -40.0)
+DOCK = (31.0 * GROW, -30.0 * GROW)
+STAND = (-46.0 * GROW, -40.0 * GROW)
 OUTHOUSE = (-9.0, -7.0)
 
 
@@ -154,7 +159,7 @@ class World2:
         for px, pz, r in ((DOCK[0], DOCK[1], 6), (STAND[0], STAND[1], 4), (OUTHOUSE[0], OUTHOUSE[1], 3)):
             if math.hypot(x - px, z - pz) < r + m:
                 return True
-        for wx, wy, wz, _ in self.wood_spots:
+        for wx, wy, wz, _ in getattr(self, 'wood_pool', self.wood_spots):
             if math.hypot(x - wx, z - wz) < 2.2 + m:
                 return True
         return False
@@ -178,18 +183,21 @@ class World2:
         for x, z in landmark_spots:
             self.wood_spots.append((x, float(terrain_h2(x, z)), z, rng.random() * 6.28))
         tries = 0
-        while len(self.wood_spots) < WOOD_SPOTS and tries < 8000:
+        while len(self.wood_spots) < WOOD_POOL and tries < 60000:
             tries += 1
             x, z = self.random_land(rng, margin=10)
             if math.hypot(x, z) < 18:
                 continue
-            if any(math.hypot(x - wx, z - wz) < 8.5 for wx, _, wz, _ in self.wood_spots):
+            if any(math.hypot(x - wx, z - wz) < 6.0 for wx, _, wz, _ in self.wood_spots):
                 continue
             self.wood_spots.append((x, float(terrain_h2(x, z)), z, rng.random() * 6.28))
+        self.wood_pool = list(self.wood_spots)
+        self.wood_spots = self.wood_pool[:WOOD_SPOTS]
         # trees, thick at the edges
+        planted = []
         n = 0
         tries = 0
-        while n < 1150 and tries < 40000:
+        while n < 3450 and tries < 120000:
             tries += 1
             edge = rng.random() < 0.22
             if edge:
@@ -208,13 +216,11 @@ class World2:
             r = rng.uniform(0.2, 0.42)
             ht = rng.uniform(9, 17)
             self.add_tree(x, z, r)
-            if rng.random() < 0.82:
-                self._pine(b, x, h, z, r, ht, rng)
-            else:
-                self._dead_tree(b, x, h, z, r, ht * 0.7, rng)
+            planted.append((rng.random() < 0.82, x, h, z, ht / 13.0, rng.random() * 6.283, rng.randrange(6)))
             n += 1
+        self._plant(b, planted, rng)
         # snowy rocks and fallen logs
-        for _ in range(140):
+        for _ in range(420):
             x, z = self.random_land(rng, margin=4, min_h=0.2)
             if self.keep_clear(x, z, 1.0):
                 continue
@@ -226,7 +232,7 @@ class World2:
                 b.box((0, sz * 0.66, 0), (sz * 0.7, 0.05, sz * 0.5), L.CONCRETE, (1.9, 1.95, 2.15), m=m)
             if sz > 1.0:
                 self.add_tree(x, z, sz * 0.6)
-        for _ in range(45):
+        for _ in range(135):
             x, z = self.random_land(rng, margin=6)
             if self.keep_clear(x, z, 3.0):
                 continue
@@ -238,7 +244,7 @@ class World2:
             for k in range(-2, 3):
                 self.add_tree(x + math.sin(a) * k * ln / 5, z + math.cos(a) * k * ln / 5, 0.3)
         # not a blanket of snow yet -- just patches and drifts left from the last fall
-        for _ in range(260):
+        for _ in range(780):
             x, z = self.random_land(rng, margin=4, min_h=0.35)
             if math.hypot(x, z) < 4.5:
                 continue
@@ -287,6 +293,36 @@ class World2:
         j, i = np.mgrid[0:nz - 1, 0:nx - 1]
         tris = np.stack([V[j, i], V[j, i + 1], V[j + 1, i + 1], V[j, i], V[j + 1, i + 1], V[j + 1, i]], axis=2)
         b.add_array(tris.reshape(-1, 12))
+
+    def _plant(self, b, planted, rng):
+        """Thousands of trees: a few template trees, copied, scaled and turned with numpy
+        (building each one vertex by vertex is far too slow and heavy in the browser)."""
+        pines, deads = [], []
+        for k in range(6):
+            pb = MeshBuilder()
+            self._pine(pb, 0.0, 0.0, 0.0, rng.uniform(0.24, 0.38), 13.0, rng)
+            pines.append(pb.array())
+            db = MeshBuilder()
+            self._dead_tree(db, 0.0, 0.0, 0.0, rng.uniform(0.22, 0.36), 9.0, rng)
+            deads.append(db.array())
+        groups = {}
+        for is_pine, x, h, z, sc, rot, var in planted:
+            groups.setdefault((is_pine, var), []).append((x, h, z, sc, rot))
+        for (is_pine, var), items in groups.items():
+            tmpl = (pines if is_pine else deads)[var]
+            it = np.array(items, np.float32)                      # n x (x, h, z, scale, rot)
+            n = len(it)
+            c, sn = np.cos(it[:, 4]), np.sin(it[:, 4])
+            P = tmpl[None, :, 0:3] * it[:, 3, None, None]          # n x v x 3, scaled
+            Nn = np.broadcast_to(tmpl[None, :, 3:6], (n,) + tmpl[:, 3:6].shape)
+            out = np.empty((n,) + tmpl.shape, np.float32)
+            out[:] = tmpl[None]
+            out[..., 0] = P[..., 0] * c[:, None] + P[..., 2] * sn[:, None] + it[:, 0, None]
+            out[..., 1] = P[..., 1] + it[:, 1, None]
+            out[..., 2] = -P[..., 0] * sn[:, None] + P[..., 2] * c[:, None] + it[:, 2, None]
+            out[..., 3] = Nn[..., 0] * c[:, None] + Nn[..., 2] * sn[:, None]
+            out[..., 5] = -Nn[..., 0] * sn[:, None] + Nn[..., 2] * c[:, None]
+            b.add_array(out.reshape(-1, 12))
 
     def _pine(self, b, x, h, z, r, ht, rng):
         m = T(x, h - 0.2, z)

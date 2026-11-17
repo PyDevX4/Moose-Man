@@ -36,10 +36,10 @@ DAWN_ENV = {'ambient': (0.32, 0.3, 0.32), 'mooncol': (0.6, 0.45, 0.35), 'moondir
             'fog': (0.6, 0.55, 0.56), 'fogdens': 0.012}
 
 CS_LINES = [
-    (1.2, "What is this place.", 2.6),
-    (5.0, "He's dragging something.", 2.8),
-    (9.6, "The Elk. The Goat Man.", 2.8),
-    (13.4, "What is he doing to them", 3.0),
+    (2.0, "What did I just open.", 2.6),
+    (7.4, "He's dragging something.", 2.8),
+    (11.0, "The Elk. The Goat Man.", 2.8),
+    (17.8, "What is he doing to them", 3.0),
 ]
 
 
@@ -59,6 +59,7 @@ class Ch5Mixin:
         self.m_pump = Mesh(self.ctx, prog, C5.pump_mesh())
         self.m_flash = Mesh(self.ctx, prog, C5.flash_mesh())
         self.m_marker = Mesh(self.ctx, prog, C5.marker_mesh())
+        self.init_ch5_puzzle(prog)
 
     def reset_ch5(self):
         self.has_shotgun = False
@@ -82,6 +83,8 @@ class Ch5Mixin:
         if w is not None:
             w.gate_open = 0.0
             w.sealed = False
+        if hasattr(self, 'c5_switches'):
+            self.reset_ch5_puzzle()
 
     # ------------------------------------------------------------------ start: a card, then the drain
     def start_ch5(self):
@@ -128,10 +131,21 @@ class Ch5Mixin:
             self.fade_in5 = 1.4
             self.set_objective("Keep going.")
             self.message("Another drain. Smaller. It goes on a long way.", 4)
+            self.hall_lit = 0.0
         else:
             self.has_shotgun = True
             w.sealed = True
             w.gate_open = 0.0
+            # everything before the fight is done; the big door has slammed behind you
+            self.hall_lit = 1.0
+            w.fac.door_open = 1.0
+            w.fac.big_open = 0.0
+            self.big5_opening = False
+            w.booth_open = 1.0
+            w.east_gate = 1.0
+            self.key5 = self.button5 = True
+            self.keypad_open = False
+            self.block_input = False
             p.reset(0.0, 0.0, 49.0, 0.0)
             self.c5_phase = 'boss'
             self.won_t = -1.0
@@ -150,13 +164,30 @@ class Ch5Mixin:
             self.message("Get up. It's still here.", 3)
 
     # ------------------------------------------------------------------ the cutscene: The Beast
+    # 0-6   the alarm, the hall lights stutter on, the east gate grinds up
+    # 6-14  he walks out of the dark dragging the Elk and the Goat Man
+    # 14-16 he turns to you; a roar
+    # 16.6-21  the bodies lift off the floor and wheel round him; lightning, sparks, blood
+    # 21    a white flash -- and they go INTO him
+    # 21-26 the merge: jitter, geysers of blood, the floor breaking up, the roof shaking
+    # 26-31 three heads roar; THE BEAST; then the fight
+    CS_END = 31.0
+    CS_CAM = (-3.0, 2.0, 72.0)
+
     def start_beast_cs(self):
         self.state = 'beastcs'
         self.bc_t = 0.0
         self.bc_fired = set()
         self.has_shotgun = True
+        self.keypad_open = False
+        self.block_input = False
         self.set_mouse(False)
         self.audio.loop('breath', 0)
+        self.audio.loop('gen_hum', 0)
+        self.bc_flash = 0.0
+        self.bc_bolts = []
+        self.debris = []
+        self.blood = []
         p = self.player
         self.bc_cam0 = (p.x, p.z, p.yaw, p.pitch)
 
@@ -170,101 +201,166 @@ class Ch5Mixin:
         self.bc_t += dt
         t = self.bc_t
         A = self.audio
-        A.loop('sewer_amb', 0.5)
+        w = self.w5
+        bx, bz = C5.BEAST_HOME
+        A.loop('sewer_amb', 0.4)
         for at, text, dur in CS_LINES:
             if self.bc_fire('l%.1f' % at, at):
                 self.message(text, dur)
-        if self.bc_fire('grate', 0.6):
-            self.w5.sealed = True
-            A.play('smash', 0.9)
-            self.shake = 0.6
-        for i in range(12):
-            if self.bc_fire('ms%d' % i, 1.6 + i * 0.62):
-                A.play3d('mstep', 40 - i * 3.3, 88, 70, 1.0)
-                A.play3d('wood_drop', 44 - i * 3.3, 89, 60, 0.4)
-        if self.bc_fire('roar1', 11.0):
-            A.play('moose_roar', 0.9)
-        for at in (13.0, 14.6, 16.1, 17.6, 18.8):
+        # the alarm and the lights
+        if self.bc_fire('alarm', 0.2):
+            A.play('stinger', 0.7)
+            A.play('clunk', 1.0)
+        self.hall_lit = clamp((t - 0.6) / 2.4, 0, 1) * (1.0 if (t > 3.0 or math.sin(t * 37) > -0.3) else 0.2)
+        # the gate
+        if self.bc_fire('gate', 1.5):
+            A.play3d('gate', C5.HALL_X, C5.EAST_DOOR[1], 120, 1.0)
+            A.play3d('smash', C5.HALL_X, C5.EAST_DOOR[1], 120, 0.5)
+        w.east_gate = sm(t, 1.5, 6.0)
+        if 1.5 < t < 6.0 and random.random() < dt * 8:
+            self.burst_debris(C5.HALL_X - 1.0, random.uniform(0.5, 8.5), C5.EAST_DOOR[1] + random.uniform(-4, 4), 6,
+                              up=1.5, spread=2.0, size=(0.03, 0.12))
+        # his steps, dragging them
+        for i in range(13):
+            if self.bc_fire('ms%d' % i, 6.4 + i * 0.6):
+                x = 42 - i * 3.2
+                A.play3d('mstep', x, bz, 70, 1.0)
+                A.play3d('wood_drop', x + 2, bz + 1, 60, 0.4)
+        if self.bc_fire('roar1', 16.0):
+            A.play('moose_roar', 1.0)
+            self.shake = max(self.shake, 0.6)
+        # the lifting: hum, crackle, lightning
+        if self.bc_fire('lift', 16.6):
+            A.play('static', 0.8)
+            A.play('screech', 0.4)
+        if 16.6 < t < 26.0:
+            if random.random() < dt * (3.0 if t < 21 else 6.0):
+                # a bolt: a white flash and a crack
+                self.bc_flash = 1.0
+                self.bc_bolts.append([random.uniform(-6, 6), random.uniform(-6, 6), 0.12])
+                A.play('crack', 0.7)
+            for _ in range(2):
+                a_ = random.random() * 6.28
+                rr = random.uniform(2, 7)
+                self.spawn_blood(bx + math.cos(a_) * rr, random.uniform(0.5, 9), bz + math.sin(a_) * rr, 2,
+                                 vel=(0.0, 4.0, 0.0), spread=3.0, size=(0.03, 0.07), key='shard')
+        self.bc_flash = max(0.0, self.bc_flash - dt * 5.0)
+        self.bc_bolts = [b for b in self.bc_bolts if b[2] > 0]
+        for b in self.bc_bolts:
+            b[2] -= dt
+        # the merge
+        if self.bc_fire('flash', 21.0):
+            A.play('smash', 1.0)
+            A.play('impact', 1.0)
+            A.play('moose_roar', 0.8)
+            self.bc_flash = 1.6
+            self.shake = 1.5
+            self.burst_debris(bx, 0.3, bz, 80, up=7.0, spread=7.0, size=(0.1, 0.5))
+        for at in (21.6, 22.4, 23.1, 23.9, 24.6, 25.3):
             if self.bc_fire('cr%.1f' % at, at):
                 A.play('crack', 1.0)
-                A.play('screech', 0.25)
-                self.shake = max(self.shake, 0.5)
-                bx, bz = C5.BEAST_HOME
-                self.spawn_blood(bx + random.uniform(-4, 4), random.uniform(2, 7), bz + random.uniform(-3, 3), 26,
-                                 vel=(0, 3.0, 0), spread=3.0, size=(0.06, 0.16))
-        if self.bc_fire('big', 19.8):
+                A.play('screech', 0.3)
+                self.shake = max(self.shake, 0.8)
+                for _ in range(2):
+                    self.spawn_blood(bx + random.uniform(-4, 4), random.uniform(2, 8), bz + random.uniform(-3, 3), 34,
+                                     vel=(0, 5.0, 0), spread=3.5, size=(0.06, 0.18))
+                self.burst_debris(bx + random.uniform(-6, 6), 0.3, bz + random.uniform(-6, 6), 20, up=4.0, spread=4.0)
+        if self.bc_fire('big', 26.0):
             A.play('moose_roar', 1.0)
-            A.play('elk_bugle', 0.9)
-            A.play('goat_roar', 0.9)
+            A.play('elk_bugle', 1.0)
+            A.play('goat_roar', 1.0)
             A.play('stinger', 1.0)
-            self.shake = 1.4
+            self.shake = 1.8
+            self.bc_flash = 0.8
         self.shake = max(0.0, self.shake - dt * 1.2)
         self.update_blood(dt)
+        self.update_debris(dt, 0.0)
         for m in self.msgs:
             m[1] -= dt
         self.msgs = [m for m in self.msgs if m[1] > 0]
-        self.fade = clamp((t - 24.2) / 0.5, 0, 1) * clamp((25.6 - t) / 0.5, 0, 1)
-        if t > 25.0 and 'go' not in self.bc_fired:
+        self.fade = clamp((t - (self.CS_END - 0.8)) / 0.5, 0, 1)
+        if t > self.CS_END and 'go' not in self.bc_fired:
             self.bc_fired.add('go')
+            self.fade = 0.0
             self.set_resume(5, 'boss')
             self.begin_ch5('boss')
-            self.fade_in5 = 0.6
+            self.fade_in5 = 0.8
             self.message("THE BEAST", 3)
 
     def beast_cs_parts(self, t):
         bx, bz = C5.BEAST_HOME
-        if t < 9.0:
-            # he drags them in through the east door
-            k = sm(t, 1.4, 9.0)
-            mx = 42.0 + (bx - 42.0) * k
-            walking = 1.4 < t < 9.0
-            moose = pose_moose(mx, 0, bz, -math.pi / 2, (t - 1.4) * 3.6, 1.0 if walking else 0.0, hunch=0.6,
+        if t < 14.5:
+            # out of the gate, dragging them
+            k = sm(t, 6.2, 14.5)
+            mx = 44.0 + (bx - 44.0) * k
+            walking = 6.2 < t < 14.5
+            moose = pose_moose(mx, 0, bz, -math.pi / 2, (t - 6.2) * 3.6, 1.0 if walking else 0.0, hunch=0.6,
                                shift=1.0, reach=0.4, t=self.time)[0]
             bodies, _ = C5.pose_beast(mx, bz, math.pi, merge=0.0, t=self.time, who='eg')
             return moose + bodies, None
-        if t < 11.0:
-            yaw = -math.pi / 2 + (-math.pi / 2) * sm(t, 9.2, 10.6)
-            moose = pose_moose(bx, 0, bz, yaw, 0.0, 0.0, hunch=0.55, shift=1.0, t=self.time)[0]
+        if t < 21.0:
+            # he turns to face you; then the bodies rise and wheel round him
+            yaw = -math.pi / 2 + (-math.pi / 2 + 0.25) * sm(t, 14.5, 15.8)
+            arms = 2.4 * sm(t, 16.4, 17.4)
+            jaw = 0.9 if 15.9 < t < 17.2 else 0.3 + 0.3 * sm(t, 17.4, 20.0)
+            moose = pose_moose(bx, 0, bz, yaw, 0.0, 0.0, hunch=0.45 - 0.3 * sm(t, 16.4, 17.4), shift=1.0, jaw=jaw,
+                               arms_up=arms, roll=0.15 * math.sin(t * 13) * sm(t, 17, 20), t=self.time)[0]
             bodies, _ = C5.pose_beast(bx, bz, math.pi, merge=0.0, t=self.time, who='eg')
+            lift = 4.5 * sm(t, 16.6, 19.0)
+            spin = 1.6 * (t - 16.6) ** 1.6 if t > 16.6 else 0.0
+            A = T(bx, lift + 0.4 * math.sin(t * 5.0) * sm(t, 17, 19), bz) @ RY(spin) @ T(-bx, 0, -bz)
+            bodies = [(key, A @ M) for key, M in bodies]
             return moose + bodies, None
-        k = sm(t, 12.5, 19.5)
-        roar = sm(t, 11.0, 11.5) * (1 - sm(t, 12.0, 12.5)) + sm(t, 19.8, 20.3) * (1 - sm(t, 22.5, 23.5))
-        jit = 1.0 if 12.5 < t < 19.6 else 0.0
-        parts, info = C5.pose_beast(bx, bz, math.pi, merge=k, roar=roar, jitter=jit, t=self.time, slam=1.2 * sm(t, 12.0, 13.0) * (1 - k))
+        k = sm(t, 21.0, 25.4)
+        roar = sm(t, 21.0, 21.4) * (1 - sm(t, 22.0, 22.6)) + sm(t, 26.0, 26.4) * (1 - sm(t, 28.5, 29.5))
+        jit = (1.4 if 21.0 < t < 25.5 else 0.0)
+        parts, info = C5.pose_beast(bx, bz, math.pi, merge=k, roar=roar, jitter=jit, t=self.time,
+                                    slam=1.2 * sm(t, 21.0, 21.8) * (1 - k))
+        # it swells past its size, then settles
+        pulse = 1.0 + 0.16 * math.sin(clamp((t - 25.0) / 1.6, 0, 1) * math.pi)
+        if pulse != 1.0:
+            A = T(bx, 0, bz) @ S(pulse) @ T(-bx, 0, -bz)
+            parts = [(key, A @ M) for key, M in parts]
         return parts, info
 
     def render_beast_cs(self):
         t = self.bc_t
-        px, pz, pyaw, ppitch = self.bc_cam0
         bx, bz = C5.BEAST_HOME
         sh = self.shake
-        cam = (px + random.uniform(-1, 1) * 0.05 * sh, 1.6 + random.uniform(-1, 1) * 0.05 * sh, pz)
-        if t < 9.0:
-            k = sm(t, 1.4, 9.0)
-            mx = 42.0 + (bx - 42.0) * k
-            tgt = (0.0, 2.0, 80.0) if t < 2.5 else (mx, 2.4, bz)
-            if t < 4.0:
-                a = look(cam, (0.0, 2.0, 80.0))
-                b_ = look(cam, (mx, 2.4, bz))
-                kk = sm(t, 2.5, 4.0)
-                fwd = tuple(a[i] + (b_[i] - a[i]) * kk for i in range(3))
-            else:
-                fwd = look(cam, tgt)
+        cx, cy, cz = self.CS_CAM
+        # a slow push back and up as it grows
+        back = 6.0 * sm(t, 20.5, 27.0)
+        cam = (cx + random.uniform(-1, 1) * 0.06 * sh, cy + 2.4 * sm(t, 20.5, 27.0) + random.uniform(-1, 1) * 0.06 * sh,
+               cz - back)
+        k = sm(t, 6.2, 14.5)
+        mx = 44.0 + (bx - 44.0) * k
+        if t < 6.2:
+            tgt = (C5.HALL_X, 4.0, C5.EAST_DOOR[1])
+        elif t < 14.5:
+            tgt = (mx, 2.4, bz)
         else:
-            k = sm(t, 12.5, 19.5)
-            fwd = look(cam, (bx, 2.4 + 5.0 * k, bz))
-        if t < 1.0:
-            # first: turn round at the grate slamming shut behind you
+            tgt = (bx, 2.6 + 6.0 * sm(t, 16.6, 19.0) * (1 - sm(t, 21.0, 23.0)) + 6.5 * sm(t, 21.0, 26.0), bz)
+        if t < 1.2:
+            px, pz, pyaw, ppitch = self.bc_cam0
             fwd0 = (math.sin(pyaw) * math.cos(ppitch), math.sin(ppitch), math.cos(pyaw) * math.cos(ppitch))
-            fwd = tuple(fwd0[i] + (fwd[i] - fwd0[i]) * sm(t, 0.0, 1.0) for i in range(3))
+            f1 = look(cam, tgt)
+            fwd = tuple(fwd0[i] + (f1[i] - fwd0[i]) * sm(t, 0.0, 1.2) for i in range(3))
+        else:
+            fwd = look(cam, tgt)
         parts, _ = self.beast_cs_parts(t)
-        mx_ = 42.0 + (bx - 42.0) * sm(t, 1.4, 9.0)
-        self.spot5 = [(mx_ + 2.0, bz - 3.0)]
+        self.spot5 = [((mx if t < 14.5 else bx) + 2.0, bz - 3.0)]
+        lights = []
+        if 16.6 < t < 28.0:
+            pulse = 0.6 + 0.4 * math.sin(t * 9.0)
+            lights.append(((bx, 6.0, bz), 34.0, (2.2 * pulse, 0.15 * pulse, 0.08 * pulse)))
+        for b in self.bc_bolts:
+            lights.append(((bx + b[0], 14.0, bz + b[1]), 60.0, (3.0, 3.0, 3.4)))
         lp = self.held_lantern_pos(cam, math.atan2(fwd[0], fwd[2]), 0.0)
-        self.draw_world5(cam, fwd, [((lp[0], lp[1] + 0.2, lp[2]), 9.0, self.lantern_col())], parts=[parts])
+        lights.append(((lp[0], lp[1] + 0.2, lp[2]), 9.0, self.lantern_col()))
+        self.draw_world5(cam, fwd, lights, parts=[parts])
         self.spot5 = []
-        if t > 20.8:
-            a = int(255 * clamp((t - 20.8) / 0.8, 0, 1) * clamp((24.4 - t) / 0.6, 0, 1))
+        if t > 26.6:
+            a = int(255 * clamp((t - 26.6) / 0.8, 0, 1) * clamp((self.CS_END - 0.6 - t) / 0.8, 0, 1))
             self.blit_text("THE BEAST", self.f_title, (180, 20, 15), (self.UW // 2, self.UH // 2 - 90), 'midtop', alpha=a)
         y = self.UH - 120
         for m in reversed(self.msgs):
@@ -279,11 +375,17 @@ class Ch5Mixin:
     def beast_cs_post(self):
         t = self.bc_t
         g = 0.0
-        if 12.5 < t < 19.6:
-            g = 0.3 + (0.9 if random.random() < 0.2 else 0.0)
-        if 19.5 < t < 19.9:
-            g = 1.4
-        return self.post_params({'fear': 0.35 if t > 9 else 0.1, 'glitch': g, 'red': 0.4 if 19.6 < t < 20.0 else 0.0})
+        if 16.6 < t < 26.0:
+            g = 0.25 + (1.0 if random.random() < 0.15 else 0.0)
+        g = max(g, self.bc_flash * 0.9)
+        red = 0.0
+        if t < 1.5:
+            red = 0.45 * (math.sin(t * 12) > 0)
+        if 20.8 < t < 21.4:
+            red = 0.7
+        bright = 1.0 + 1.6 * self.bc_flash
+        return self.post_params({'fear': 0.45 if t > 14 else 0.15, 'glitch': g, 'red': red,
+                                 'bright': self.settings['brightness'] * 1.15 * bright})
 
     # ------------------------------------------------------------------ play
     def hurt5(self, amount, src=None):
@@ -460,11 +562,7 @@ class Ch5Mixin:
             self.fade = clamp(self.fade_in5 / 1.2, 0, 1)
         # the drain
         if self.c5_phase == 'drain':
-            if not self.has_shotgun and self.focus == ('shotgun', 0) and keys[pygame.K_e]:
-                pass
-            if self.mp_gather('factory', p.z > C5.TUN_Z1 + 1.8):
-                self.start_beast_cs()
-                return
+            self.update_ch5_puzzle(dt, keys)
         elif self.c5_phase == 'boss':
             self.update_beast(dt)
             if self.state != 'play':
@@ -645,7 +743,7 @@ class Ch5Mixin:
 
     def find_focus_ch5(self):
         if self.has_shotgun:
-            return None
+            return self.ch5_puzzle_focus() if self.c5_phase == 'drain' else None
         p = self.player
         ex, ey, ez = p.eye()
         f = p.fwd()
@@ -654,9 +752,11 @@ class Ch5Mixin:
         d = math.sqrt(dx * dx + dy * dy + dz * dz)
         if d < 2.4 and (dx * f[0] + dy * f[1] + dz * f[2]) / max(d, 1e-4) > 0.6:
             return ('shotgun', 0)
-        return None
+        return self.ch5_puzzle_focus() if self.c5_phase == 'drain' else None
 
     def interact_ch5(self):
+        if self.focus and self.ch5_puzzle_interact(*self.focus):
+            return
         if self.focus == ('shotgun', 0) and not self.has_shotgun:
             self.has_shotgun = True
             self.shells = SHELLS
@@ -720,35 +820,38 @@ class Ch5Mixin:
         for pl_pos in getattr(self, 'spot5', []):
             # a work lamp's worth of light on the thing, so you can see what you're fighting
             dyn.append(((pl_pos[0], 13.0, pl_pos[1]), 26.0, (1.5, 1.05, 0.7)))
+        dyn = self.ch5_puzzle_lights() + dyn
+        lit = getattr(self, 'hall_lit', 1.0)
+        reg = w.region(cam[0], cam[2])
         cand = []
         for (pos, rad, col, kind) in w.lights:
             d = math.hypot(pos[0] - cam[0], pos[2] - cam[2])
-            if kind == 'tunnel' and cam[2] > C5.TUN_Z1 + 6:
+            if d > rad + 45:
                 continue
-            if kind != 'tunnel' and cam[2] < C5.TUN_Z1 - 10:
+            if kind in ('lamp', 'fire', 'red') and lit <= 0.01:
                 continue
-            k = 1.0
+            k = lit if kind in ('lamp', 'fire', 'red') else 1.0
             if kind == 'fire':
-                k = 0.8 + 0.2 * math.sin(self.time * 9 + pos[0]) * math.sin(self.time * 5.3 + pos[2])
+                k *= 0.8 + 0.2 * math.sin(self.time * 9 + pos[0]) * math.sin(self.time * 5.3 + pos[2])
             elif kind == 'red':
-                k = 0.6 + 0.4 * (math.sin(self.time * 4) > 0)
+                k *= 0.6 + 0.4 * (math.sin(self.time * 4) > 0)
             elif kind == 'lamp':
-                k = 1.0 if math.sin(self.time * 17 + pos[2]) > -0.97 else 0.3
+                k *= 1.0 if math.sin(self.time * 17 + pos[2]) > -0.97 else 0.3
             cand.append((d - (25 if kind == 'lamp' else 0), (pos, rad, tuple(c * k * 1.6 for c in col))))
         cand.sort(key=lambda o: o[0])
         all_lights = (dyn + [c[1] for c in cand])[:8]
-        if cam[2] < C5.TUN_Z1 - 2:
+        if reg != 'hall':
             env = TUNNEL_ENV
         else:
-            env = FACTORY_ENV
+            env = mix_env(TUNNEL_ENV, FACTORY_ENV, lit)
             out = clamp((cam[2] - C5.HALL_Z1 + 6) / 14.0, 0, 1) * w.gate_open
             if out > 0:
                 env = mix_env(FACTORY_ENV, DAWN_ENV, out)
         r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights, far=200.0)
         r.draw(self.m_ch5)
         r.draw(self.m_gate5, model=T(0.0, w.gate_open * (C5.GATE_H - 0.6), C5.HALL_Z1 - 0.4))
-        if w.sealed:
-            r.draw(self.m_grate5, model=T(0.0, 0.0, C5.TUN_Z1 + 0.15))
+        r.draw(self.m_grate5, model=T(0.0, 0.0, C5.TUN_Z1 - 0.35))
+        self.draw_ch5_dyn(r)
         if not self.has_shotgun:
             sx, sy, sz = C5.SHOTGUN_POS
             r.draw(self.m_shotgun, model=T(sx, 0.06, sz) @ RY(0.4) @ RZ(math.pi / 2))
@@ -848,8 +951,11 @@ class Ch5Mixin:
         if self.hitmark_t > 0:
             for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
                 pygame.draw.line(self.ui, (240, 230, 220, 230), (cx + sx * 6, cy + sy * 6), (cx + sx * 12, cy + sy * 12), 2)
+        st5 = self.ch5_status()
+        if st5:
+            self.blit_text(st5, self.f_small, (215, 205, 190), (26, 56))
         if self.c5_phase != 'boss':
-            self.blit_text(self.objective if self.obj_t > 0 else "", self.f_small, (160, 152, 142), (26, 56))
+            self.blit_text(self.objective if self.obj_t > 0 else "", self.f_small, (160, 152, 142), (26, 76 if st5 else 56))
         elif self.obj_t > 0:
             a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
             self.blit_text(self.objective, self.f_small, (160, 152, 142), (26, 76), alpha=a)

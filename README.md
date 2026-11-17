@@ -140,13 +140,21 @@ Checkpoints: the start of the chapter, and entering the hall.
 ## Chapter Five
 
 A smaller storm drain, past the second gate. Halfway down it there's a dead
-hunter, and his **shotgun** (**E** to take it).
+hunter, and his **shotgun** (**E** to take it). The drain is grated off at the
+far end, but a hole in its wall leads into a derelict factory. Nothing lives in
+the factory, and you'll need the time.
 
-The drain opens into a derelict factory, enormous and dark. Then the Moose Man
-drags in what's left of the Elk and the Goat Man and **takes them into
-himself**. What stands up is **The Beast**: three times his height, the Elk's
-crawling white body, the Moose Man rising out of its hump, and the Goat Man
-grown out of its flank.
+- **The steel door** has a 4-digit keypad. Four scraps of paper are hidden in the
+  small rooms around it, each with one digit (`_ _ 7 _`). Type or tap the code in.
+- **The machine floor** behind it is big. Two huge machines each need **two
+  switches** thrown (hold **E**), and the four switches are hidden around the
+  floor. With both machines running, the **huge door** into the main hall lifts.
+- **The hall is pitch black.** The key to the **admin booth** in the corner is on
+  one of the shelves round the walls. In the booth there's a button.
+- The button opens the gate he comes out of. He drags out what's left of the Elk
+  and the Goat Man, they rise off the floor and **go into him**, and what stands
+  up is **The Beast**: three times his height, the Elk's crawling white body, the
+  Moose Man rising out of its hump, and the Goat Man grown out of its flank.
 
 - **Left mouse** fires (six shells), and **R** reloads. Heads take the most
   damage. Up close does more than far away.
@@ -198,6 +206,16 @@ version share it. When you log in, the newer of the two saves wins. Saves on a d
 you had an account go up the first time you log in there, but another account's save is never
 copied into yours. Guests save only on their own device. It uses a `mooseman_saves` table
 (`supabase/mooseman_saves.sql`), and each player can only read and write their own row.
+
+## Every game is different
+
+The maps are about **three times** as big as they used to be: the Chapter 1 sewers,
+the Chapter 2 forest, the Chapter 3 caves and mine, and the Chapter 4 deep
+sewer. And the puzzle pieces are somewhere new **every time you play**: the
+valves, the flood levers and the ladder key in Chapter 1, the firewood in
+Chapter 2, the levers in Chapter 3, the fuses in Chapter 4, and the code, the
+papers, the switches and the key in Chapter 5. In co-op the host's game
+decides, so everyone gets the same layout.
 
 ## Saving
 

@@ -36,6 +36,7 @@ from ch5game import Ch5Mixin
 from coop import CoopMixin, PLAYISH
 from extras import ExtrasMixin
 from account import AccountMixin
+from ch5puzzle import Ch5PuzzleMixin
 
 TITLE = "Moose Man"
 
@@ -222,7 +223,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
+class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin):
     def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -524,6 +525,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         self.reset_ch5()
         if hasattr(self, 'm_key'):
             self.reset_extras()
+            seed = self.mp.seed if (self.mp_on() and getattr(self.mp, 'seed', None)) else random.randrange(1, 1 << 30)
+            self.randomize_puzzles(seed)
 
     def respawn(self):
         if self.mp_on():
@@ -600,7 +603,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
     def web_mode(self):
         """What the page should put on top: touch controls, a text box, or nothing."""
         st = self.state
-        if self.admin_open:
+        if self.admin_open or getattr(self, 'keypad_open', False):
             return 'menu'
         if st in ('coopname', 'coopjoin'):
             return 'text'
@@ -632,6 +635,9 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
             return
         if self.admin_open:
             self.admin_event(ev)
+            return
+        if getattr(self, 'keypad_open', False):
+            self.keypad_event(ev)
             return
         st = self.state
         if st == 'login':
@@ -3254,6 +3260,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
             for (x, y, z) in lv.bulbs:
                 r.draw(self.m_bulb, model=T(x, y, z) @ S(0.07, 0.11, 0.07))
         for lev in lv.levers:
+            r.draw(self.m_lever_box, model=T(*lev['pos']) @ RY(lev['yaw']))
             r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
         self.draw_c3_dyn(r, lv)
         if lv.elevator:
@@ -3998,6 +4005,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
             post = self.post_params({'fear': 0.0})
         if self.admin_open:
             self.draw_admin_ui()
+        if getattr(self, 'keypad_open', False) and self.state in PLAYISH:
+            self.draw_keypad()
         if self.settings['show_fps']:
             img = self.f_small.render("%d fps" % self.clock.get_fps(), True, (200, 200, 200))
             self.ui.blit(img, (self.UW - img.get_width() - 10, self.UH - 20))
@@ -4297,6 +4306,12 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
                     pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, v['progress'])), 8))
             elif kind in ('c1lever', 'c1key', 'keygate'):
                 label, prog_ = self.c1_label(kind, key)
+                if prog_ > 0:
+                    w = 160
+                    pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))
+                    pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, prog_)), 8))
+            elif kind in ('paper5', 'keypad5', 'switch5', 'key5', 'booth5', 'button5'):
+                label, prog_ = self.ch5_label(kind, key)
                 if prog_ > 0:
                     w = 160
                     pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))

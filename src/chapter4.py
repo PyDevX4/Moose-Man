@@ -91,6 +91,9 @@ class SewerLevel(C3.Level):
         cv(10, 39, 16, 43, '.')
         cv(12, 37, 13, 38, '.')
         cv(29, 37, 32, 38, ',')              # a crawlspace off the hall
+        # three times as much sewer, grown around it; the two gates still split it into sections
+        keep = {(c, r) for r in range(0, 12) for c in range(16, 27)} | {(c, r) for r in range(14, 21) for c in range(17, 27)}             | {(c, r) for r in range(35, 46) for c in range(18, 28)}
+        self.grow_map(34, 30, seed=4142, barrier='GH', keep_out=keep, corridor_kinds='...,')
         self.finish()
         self.spawn = self.center(21, 4)
         self.safe = self.center(24, 10)      # section 1 respawn: the crawlspace
@@ -279,6 +282,12 @@ def build():
 def dress(lv, b):
     rng = lv.rng
     lv.build_mesh(b)
+    grng = random.Random(4243)
+    for (c0, r0, c1, r1, _k) in getattr(lv, 'grown', ()):
+        if grng.random() < 0.35:
+            x, z = lv.center((c0 + c1) // 2, (r0 + r1) // 2)
+            lv.lights.append({'pos': (x, lv.y0 + 3.6, z), 'rad': 9.0, 'col': grng.choice(((0.9, 0.55, 0.3), (0.45, 0.55, 0.5))),
+                              'gen': None})
     y0 = lv.y0
     # ---- the landing: a mound of broken floor slabs under the hole
     hx0, hz0 = lv.ox + HOLE[0] * C, lv.oz + HOLE[1] * C

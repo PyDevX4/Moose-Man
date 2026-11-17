@@ -10,8 +10,8 @@ from textures import L, EMIS
 C = 2.0
 OX = -11.0
 OZ = 48.0
-COLS = 48
-ROWS = 68
+COLS = 92
+ROWS = 112
 STEP = 0.66
 SEWER_FLOOR = -5.0
 
@@ -58,9 +58,6 @@ def keep_clear(x, z, margin):
     """Where nothing may grow: the road corridor and the manhole clearing."""
     if ROAD_X0 - 5.5 - margin < x < ROAD_X1 + 5.5 + margin:
         return True
-    for lx, lz, _ in C1_LEVERS:
-        if math.hypot(x - lx, z - lz) < 3.5 + margin:
-            return True
     return math.hypot(x - MANHOLE[0], z - MANHOLE[1]) < 4.0 + margin
 
 
@@ -189,6 +186,14 @@ class World:
         carve(8, 63, 32, 66)            # the settling tank
         for c in (14, 20, 26):
             g[64][c] = '#'
+        # ---- and three times as much again: rooms and tunnels grown out of the rock around it all.
+        # The flooded basin is a barrier, so nothing new is a way round draining it.
+        from gridgrow import grow
+        keep = {(c, r) for r in range(0, 21) for c in range(0, 20)}            # the storm drain and junction
+        keep |= {(c, r) for r in range(44, 52) for c in range(16, 24)}         # around the ladder shaft
+        self.grown = grow(g, random.Random(4417), factor=3.0, passable='.~tWSX', connect_to='.',
+                          room_kinds='.', barrier='WS', bounds=(1, 1, COLS - 2, ROWS - 2), room_w=(3, 9),
+                          room_h=(3, 8), keep_out=keep, tries=40000)
         self.g = g
 
         fl = np.full((ROWS, COLS), SEWER_FLOOR)
@@ -373,7 +378,7 @@ class World:
             return False
         return abs(self.edge_floor(a[0], a[1], side) - self.edge_floor(c, r, opp)) <= 0.7
 
-    def astar(self, start, goal, max_nodes=4000):
+    def astar(self, start, goal, max_nodes=14000):
         if start == goal:
             return [goal]
         if self.kind(*goal) == '#':
@@ -471,21 +476,14 @@ class World:
         for gx in (-1.04, 1.04):
             b.box((gx, 1.2, 47.72), (0.1, 2.5, 0.14), L.METAL, (0.5, 0.48, 0.45))
         b.facing_quad((-2.4, 1.5, 47.78), (0, 0, -1), 0.9, 0.6, L.SIGN, (0.85, 0.82, 0.7))
-        # the release levers: on concrete posts, each with a red lamp so you can find them
+        # the release levers: on concrete posts, each with a red lamp so you can find them.
+        # The posts are drawn on their own (c1_post_mesh) so a new game can move them.
         for lx, lz, yaw in C1_LEVERS:
-            h0 = float(terrain_h(lx, lz))
-            m = T(lx, h0, lz) @ RY(yaw)
-            b.box((0, 0.7, -0.15), (0.5, 1.4, 0.3), L.CONCRETE, (0.7, 0.7, 0.68), m=m)
-            b.box((0, 1.15, 0.02), (0.4, 0.6, 0.06), L.METAL, (0.55, 0.5, 0.45), m=m)
-            b.box((0, 1.5, 0.03), (0.46, 0.07, 0.1), L.METAL, (0.85, 0.7, 0.2), m=m)
-            b.box((0, 1.62, -0.15), (0.12, 0.12, 0.12), L.GLOW + EMIS, (1.0, 0.15, 0.1), m=m)
-            pm = m @ T(0, 1.1, 0.12)
-            pos = (float(pm[0, 3]), float(pm[1, 3]), float(pm[2, 3]))
-            self.c1_levers.append({'pos': pos, 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': -0.8})
-            lp = m @ T(0, 1.75, 0.3)
-            self.lights.append({'pos': (float(lp[0, 3]), float(lp[1, 3]), float(lp[2, 3])), 'rad': 5.0,
-                                'col': (0.9, 0.1, 0.06), 'flicker': 'soft'})
-            self.add_tree(lx, lz - 0.15, 0.35)
+            light = {'pos': (lx, 1.8, lz), 'rad': 5.0, 'col': (0.9, 0.1, 0.06), 'flicker': 'soft'}
+            self.lights.append(light)
+            lev = {'pos': (lx, 1.1, lz), 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': -0.8, 'light': light}
+            self.c1_levers.append(lev)
+            self.place_c1_lever(lev, lx, lz, yaw)
         self.forest_boxes.append((-6.9, 46.3, -6.5, 48.0))
         self.forest_boxes.append((6.5, 46.3, 6.9, 48.0))
 
@@ -1258,6 +1256,41 @@ class World:
         self.key_pos = (kx - 0.35, SEWER_FLOOR + 0.06, kz + 0.2)
         self.decal(b, 8, 65, 'W', L.G_ONEMORE, 2.0, 2.0, -3.0)
         self.drip_points += [cc(12, 64), cc(22, 63), cc(29, 65)]
+        self._grown_props(b)
+
+    def _grown_props(self, b):
+        """Dress the grown rooms: some lit, most dark, all of them lived in by something."""
+        rng = random.Random(5519)
+        cc = cell_center
+        for (c0, r0, c1, r1, _k) in getattr(self, 'grown', ()):
+            mc, mr = (c0 + c1) // 2, (r0 + r1) // 2
+            x, z = cc(mc, mr)
+            if rng.random() < 0.45:
+                self.bulb(b, x, -2.0, z, -1.0, flicker=rng.choice(('soft', 'bad', 'bad')),
+                          colr=rng.choice(((1.0, 0.55, 0.25), (0.6, 0.65, 0.8), (0.55, 0.12, 0.08))), rad=8.0)
+            for _ in range(rng.randint(0, 3)):
+                c, r = rng.randint(c0, c1), rng.randint(r0, r1)
+                roll = rng.random()
+                px, pz = cc(c, r)
+                if roll < 0.3:
+                    self.bones(b, px, pz, rng.randint(6, 16), rng, 0.6)
+                elif roll < 0.5:
+                    self.floor_decal(b, px, pz, rng.uniform(1.0, 2.0), rng.uniform(1.0, 2.0), L.BLOOD, rot=rng.random() * 6)
+                elif roll < 0.7:
+                    self.floor_decal(b, px, pz, 2.0, 2.0, L.WATER)
+                elif roll < 0.85 and c1 - c0 >= 3 and r1 - r0 >= 3:
+                    self.crate(b, px, pz, rng.uniform(0.6, 0.95), rot=rng.random())
+                else:
+                    self.sneaker(b, px, pz, rng.random() * 6, ((0.9, 0.9, 0.9), (0.7, 0.1, 0.1), (0.2, 0.3, 0.7))[rng.randrange(3)])
+            # a mark on a wall now and then
+            if rng.random() < 0.35:
+                side = rng.choice('NSEW')
+                c, r = (rng.randint(c0, c1), r1) if side == 'N' else (rng.randint(c0, c1), r0) if side == 'S' else                     (c1, rng.randint(r0, r1)) if side == 'E' else (c0, rng.randint(r0, r1))
+                nc, nr = c + {'N': 0, 'S': 0, 'E': 1, 'W': -1}[side], r + {'N': 1, 'S': -1, 'E': 0, 'W': 0}[side]
+                if self.kind(nc, nr) == '#':
+                    self.decal(b, c, r, side, rng.choice((L.HAND, L.TALLY, L.G_UNDER, L.G_DONTLOOK)),
+                               1.4 if rng.random() < 0.5 else 0.5, 1.4, -3.4)
+            self.drip_points.append((x, z))
 
     def add_block(self, c, r):
         pass  # pumps sit on the floor; collision handled by extra boxes below
@@ -1267,8 +1300,21 @@ class World:
 
     extra_boxes = []
 
+    def place_c1_lever(self, lev, x, z, yaw):
+        h0 = float(terrain_h(x, z))
+        m = T(x, h0, z) @ RY(yaw)
+        pm = m @ T(0, 1.1, 0.12)
+        lev['pos'] = (float(pm[0, 3]), float(pm[1, 3]), float(pm[2, 3]))
+        lev['yaw'] = yaw
+        lev['base'] = (x, h0, z)
+        lp = m @ T(0, 1.75, 0.3)
+        lev['light']['pos'] = (float(lp[0, 3]), float(lp[1, 3]), float(lp[2, 3]))
+
     def dyn_boxes(self):
         out = []
+        for lev in self.c1_levers:
+            bx, _, bz = lev.get('base', lev['pos'])
+            out.append((bx - 0.32, bz - 0.32, bx + 0.32, bz + 0.32))
         if self.grate_open < 0.8:
             out.append((-1.1, 47.55, 1.1, 48.1))
         if self.keygate_open < 0.8:
