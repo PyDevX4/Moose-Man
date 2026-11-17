@@ -400,6 +400,7 @@ class World5:
         self._outside(b, rng)
         self._hall_extras(b)
         self.fac.build_mesh(b)
+        self.fac.decorate(b)
         self.lights += self.fac.lights5
         return b.array()
 

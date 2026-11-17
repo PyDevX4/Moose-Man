@@ -263,6 +263,17 @@ class World2:
             b.cylinder(r, r * 0.25, rng.uniform(0.3, 0.6), 8, L.CONCRETE, (1.9, 1.95, 2.15), m=T(px, h - 0.05, pz), cap=True)
         self._cabin(b)
         self._landmarks(b, rng)
+        import decor
+        drng = random.Random(6201)
+        spots = []
+        for _ in range(1600):
+            x, z = self.random_land(drng, margin=6, min_h=0.3)
+            if self.keep_clear(x, z, 0.5) or self.near_tree(x, z, 0.9):
+                continue
+            spots.append((x, z))
+            if len(spots) >= 700:
+                break
+        decor.forest_floor(b, spots, lambda x, z: float(terrain_h2(x, z)), drng)
         self.static_data = b.array()
 
         wb = MeshBuilder()

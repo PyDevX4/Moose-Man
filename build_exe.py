@@ -44,8 +44,10 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Cutscene fixes: a real shaft for the Ch3 elevator, a broken hole for the Ch4 fall,",
-    "and no more walking through the snow when you leave the cabin in Ch3.",
+    "Sharper, dirtier textures everywhere: cracked concrete, rusty metal, mossy brick, wood grain.",
+    "Lots more decor in every chapter: junk, barrels, pipes and chains in the tunnels,",
+    "timber props and stalactites in the mine, pallets and shelves in the factory,",
+    "stumps, ferns, mushrooms and branches in the woods.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

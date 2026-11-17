@@ -441,6 +441,27 @@ def build_lower():
     return lv
 
 
+def decorate(lv, b, seed):
+    """Mine junk along the walls and rock hanging from the roof -- clear of the elevator, the rails,
+    and anything that already stands there."""
+    import decor
+    busy = list(lv.boxes)
+    rail = getattr(lv, 'rail', None)
+    lift = lv.center(*lv.elevator) if lv.elevator else None
+
+    def skip(c, r):
+        x, z = lv.center(c, r)
+        if lift and math.hypot(x - lift[0], z - lift[1]) < 4.5:
+            return True
+        if rail and abs(x - rail[0]) < 3.2 and rail[1] - 4 < z < rail[2] + 4:
+            return True
+        if getattr(lv, 'safe', None) and math.hypot(x - lv.safe[0], z - lv.safe[1]) < 3.0:
+            return True
+        return any(bx0 - 1.6 < x < bx1 + 1.6 and bz0 - 1.6 < z < bz1 + 1.6 for bx0, bz0, bx1, bz1 in busy)
+
+    decor.dress_level(lv, b, 'mine', seed, skip=skip)
+
+
 def dress_upper(lv, b):
     rng = lv.rng
     lv.build_mesh(b)

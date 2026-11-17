@@ -108,6 +108,27 @@ class FactoryLevel(C3.Level):
     def floor_cells(self, zone_of=None):
         return [(c, r) for r in range(self.rows) for c in range(self.cols) if self.g[r][c] == '.']
 
+    def decorate(self, b):
+        """Barrels, pallets, shelves, fuse boxes and chains -- not in the machine rooms, not by the doors."""
+        import decor
+        busy = list(self.boxes)
+
+        def skip(c, r):
+            if inside(M1_ROOM, c, r) or inside(M2_ROOM, c, r):
+                return True
+            if abs(c - DOOR_CELL[0]) <= 2 and abs(r - DOOR_CELL[1]) <= 2:
+                return True
+            if c >= 36 and BIG_ROWS[0] - 3 <= r <= BIG_ROWS[1] + 3:
+                return True
+            if c >= COLS - 3 and 24 <= r <= 30:
+                return True
+            if any(self.kind(c + dc, r + dr) not in '.#' for dc in (-1, 0, 1) for dr in (-1, 0, 1)):
+                return True
+            x, z = self.center(c, r)
+            return any(bx0 - 1.6 < x < bx1 + 1.6 and bz0 - 1.6 < z < bz1 + 1.6 for bx0, bz0, bx1, bz1 in busy)
+
+        decor.dress_level(self, b, 'factory', 6501, skip=skip)
+
     # ---- geometry: a dead factory, not a cave
     def build_mesh(self, b):
         rng = random.Random(5353)

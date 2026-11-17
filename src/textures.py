@@ -43,13 +43,14 @@ class L:
 EMIS = 100.0
 
 
-def _noise(rng, cx, cy):
+def _noise(rng, cx, cy, size=None):
+    SIZE_ = size or SIZE
     g = rng.random((cy, cx))
-    xs = np.arange(SIZE) * cx / SIZE
+    xs = np.arange(SIZE_) * cx / SIZE_
     x0 = np.floor(xs).astype(int)
     fx = xs - x0
     x1 = (x0 + 1) % cx
-    ys = np.arange(SIZE) * cy / SIZE
+    ys = np.arange(SIZE_) * cy / SIZE_
     y0 = np.floor(ys).astype(int)
     fy = ys - y0
     y1 = (y0 + 1) % cy
@@ -64,14 +65,15 @@ def _noise(rng, cx, cy):
     return (a * (1 - FX) + b * FX) * (1 - FY) + (c * (1 - FX) + d * FX) * FY
 
 
-def fbm(rng, base=4, octaves=5, ax=1, ay=1):
-    tot = np.zeros((SIZE, SIZE))
+def fbm(rng, base=4, octaves=5, ax=1, ay=1, size=None):
+    S_ = size or SIZE
+    tot = np.zeros((S_, S_))
     amp = 1.0
     s = 0.0
     for o in range(octaves):
-        cx = min(int(base * ax * 2 ** o), SIZE)
-        cy = min(int(base * ay * 2 ** o), SIZE)
-        tot += _noise(rng, max(cx, 1), max(cy, 1)) * amp
+        cx = min(int(base * ax * 2 ** o), S_)
+        cy = min(int(base * ay * 2 ** o), S_)
+        tot += _noise(rng, max(cx, 1), max(cy, 1), S_) * amp
         s += amp
         amp *= 0.5
     return tot / s
@@ -411,8 +413,137 @@ def make_textures():
     bloodied = white * (1 - st[..., None]) + np.array((0.42, 0.03, 0.02)) * st[..., None] * (0.6 + 0.6 * lum[..., None])
     layers[L.WFUR_B] = (bloodied, ones)
 
-    out = np.zeros((L.COUNT, SIZE, SIZE, 4), np.uint8)
+    layers = refine(layers, rng)
+    R = OUT_SIZE
+    out = np.zeros((L.COUNT, R, R, 4), np.uint8)
     for i, (rgb, a) in enumerate(layers):
         rgba = np.concatenate([np.clip(rgb, 0, 1), np.clip(a, 0, 1)[..., None]], -1)
         out[i] = (np.flipud(rgba) * 255).astype(np.uint8)
     return out
+
+
+# ---------------------------------------------------------------------- the detail pass
+OUT_SIZE = 512
+
+
+def _up(img):
+    """Bilinear upscale of a SIZE x SIZE (x C) image to OUT_SIZE, wrapping at the edges (they tile)."""
+    n = img.shape[0]
+    f = OUT_SIZE / n
+    xs = (np.arange(OUT_SIZE) + 0.5) / f - 0.5
+    x0 = np.floor(xs).astype(int)
+    t = xs - x0
+    x0 %= n
+    x1 = (x0 + 1) % n
+    squeeze = img.ndim == 2
+    if squeeze:
+        img = img[..., None]
+    rows = img[x0] * (1 - t)[:, None, None] + img[x1] * t[:, None, None]
+    out = rows[:, x0] * (1 - t)[None, :, None] + rows[:, x1] * t[None, :, None]
+    return out[..., 0] if squeeze else out
+
+
+def refine(layers, rng):
+    """Every layer to OUT_SIZE, with fine detail and wear painted on at full resolution."""
+    R = OUT_SIZE
+    yy, xx = np.mgrid[0:R, 0:R] / R
+    ones = np.ones((R, R))
+
+    def F(base, octaves=4, ax=1, ay=1):
+        return fbm(rng, base, octaves, ax, ay, size=R)
+
+    def lines(freq, warp, width, ax=0):
+        """Thin wandering lines: cracks, grain, scratches."""
+        coord = (xx if ax == 0 else yy) * freq + warp
+        return (np.abs(np.sin(coord * math.pi)) < width).astype(float)
+
+    out = []
+    for i, (rgb, a) in enumerate(layers):
+        rgb = _up(rgb)
+        a = _up(a)
+        fine = F(32, 3)
+        if i == L.CONCRETE:
+            crack = lines(3, F(3, 4) * 6, 0.012) * (F(4, 3) > 0.55)
+            crack = np.maximum(crack, lines(2, F(2, 4) * 7, 0.01, ax=1) * (F(5, 3) > 0.6))
+            damp = F(2, 4, ax=10, ay=1)
+            rgb = rgb * (0.88 + 0.24 * fine)[..., None]
+            rgb = rgb * (1 - 0.55 * crack)[..., None]
+            rgb = rgb * (1 - 0.3 * smooth(0.55, 0.85, damp) * (0.4 + 0.6 * yy))[..., None]
+            grit = rng.random((R, R))
+            rgb[grit > 0.992] *= 0.55
+            rgb[grit < 0.006] *= 1.25
+        elif i == L.BRICK:
+            edge = F(24, 3)
+            rgb = rgb * (0.85 + 0.3 * fine)[..., None]
+            dark = rgb.mean(axis=2) < 0.07                  # the mortar lines
+            salt = smooth(0.62, 0.8, F(5, 4)) * dark
+            rgb = mix(rgb, col((0.55, 0.53, 0.48), ones), salt * 0.6)
+            moss = smooth(0.58, 0.75, F(6, 4)) * dark
+            rgb = mix(rgb, col((0.08, 0.13, 0.05), ones), moss * 0.8)
+            chip = (edge > 0.78) & ~dark
+            rgb[chip] *= 0.6
+        elif i == L.METAL:
+            runs = F(3, 4, ax=1, ay=12)
+            rust = smooth(0.5, 0.75, F(4, 5)) * (0.5 + 0.5 * runs)
+            rgb = mix(rgb, col((0.38, 0.16, 0.06), ones), rust * 0.3)
+            rgb = rgb * (0.85 + 0.3 * fine)[..., None]
+            scratch = lines(9, F(6, 3) * 3, 0.01) * (F(3, 3) > 0.5)
+            rgb = rgb + (scratch * 0.12)[..., None]
+            rv = ((np.mod(xx * 8, 1) - 0.5) ** 2 + (np.mod(yy * 2, 1) - 0.06) ** 2) < 0.0012
+            rgb[rv] = rgb[rv] * 0.5 + 0.12
+        elif i == L.WOOD:
+            grain = (np.abs(np.sin((xx * 40 + F(3, 4) * 4) * math.pi)) < 0.06).astype(float) * 0.6
+            rgb = rgb * (1 - 0.3 * grain)[..., None]
+            rgb = rgb * (0.88 + 0.24 * fine)[..., None]
+            knot = np.zeros((R, R))
+            for _ in range(5):
+                kx, ky, kr = rng.random(), rng.random(), rng.uniform(0.012, 0.025)
+                d = np.hypot((xx - kx) * 3, yy - ky)
+                knot = np.maximum(knot, smooth(kr * 1.6, kr * 0.4, d))
+            rgb = rgb * (1 - 0.5 * knot)[..., None]
+            nails = ((np.mod(xx * 8, 1) < 0.03) | (np.mod(xx * 8, 1) > 0.97)) & (np.mod(yy * 4 + 0.1, 1) < 0.012)
+            rgb[nails] = (0.08, 0.08, 0.09)
+        elif i == L.GRASS:
+            litter = F(24, 3)
+            rgb = mix(rgb, col((0.26, 0.15, 0.06), ones), smooth(0.68, 0.78, litter) * 0.8)
+            twig = lines(5, F(5, 3) * 5, 0.008) * (F(6, 3) > 0.62)
+            rgb = rgb * (1 - 0.5 * twig)[..., None]
+            rgb = rgb * (0.8 + 0.4 * fine)[..., None]
+        elif i == L.BARK:
+            furrow = (np.abs(np.sin((xx * 9 + F(2, 4, ax=1, ay=5) * 3) * math.pi)) < 0.12).astype(float)
+            rgb = rgb * (1 - 0.25 * furrow)[..., None]
+            lichen = smooth(0.66, 0.8, F(6, 4))
+            rgb = mix(rgb, col((0.25, 0.28, 0.2), ones), lichen * 0.6)
+            rgb = rgb * (0.85 + 0.3 * fine)[..., None]
+        elif i == L.MUD:
+            wet = smooth(0.55, 0.75, F(3, 4))
+            rgb = rgb * (1 - 0.35 * wet)[..., None]
+            pebble = F(48, 2) > 0.74
+            rgb[pebble] = rgb[pebble] * 0.6 + 0.08
+            rgb = rgb * (0.85 + 0.3 * fine)[..., None]
+        elif i in (L.FUR, L.WFUR, L.WFUR_B):
+            strands = F(64, 2, ax=1, ay=10)
+            rgb = rgb * (0.75 + 0.5 * strands)[..., None]
+        elif i in (L.CLOTH, L.REDCLOTH):
+            weave = (np.sin(xx * R * 1.2) * np.sin(yy * R * 1.2) > 0) * 0.07
+            rgb = rgb * (0.9 + weave + 0.15 * fine)[..., None]
+        elif i == L.SKIN:
+            vein = lines(4, F(4, 4) * 5, 0.01) * (F(3, 3) > 0.45)
+            rgb = mix(rgb, col((0.3, 0.22, 0.3), ones), vein * 0.5)
+            rgb = rgb * (0.9 + 0.2 * fine)[..., None]
+        elif i == L.BONE:
+            rgb = rgb * (0.9 + 0.2 * fine)[..., None]
+            pit = F(48, 2) > 0.78
+            rgb[pit] *= 0.75
+        elif i == L.WATER:
+            rip = np.sin((xx * 30 + F(3, 4) * 6) * math.pi) * 0.5 + 0.5
+            rgb = rgb * (0.85 + 0.25 * rip)[..., None]
+        elif i == L.NEEDLES:
+            rgb = rgb * (0.7 + 0.6 * F(64, 2, ax=1, ay=6))[..., None]
+        elif i == L.LEAVES:
+            rgb = rgb * (0.8 + 0.4 * F(48, 2))[..., None]
+        elif i in (L.PAPER, L.FLYER, L.SIGN):
+            rgb = rgb * (0.94 + 0.1 * fine)[..., None]
+        out.append((rgb, a))
+    return out
+

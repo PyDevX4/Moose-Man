@@ -351,6 +351,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         bu, bl = MeshBuilder(), MeshBuilder()
         C3.dress_upper(self.lv_up, bu)
         C3.dress_lower(self.lv_low, bl)
+        C3.decorate(self.lv_up, bu, 6301)
+        C3.decorate(self.lv_low, bl, 6302)
         self.m_up = Mesh(self.ctx, prog, bu.array())
         self.m_low = Mesh(self.ctx, prog, bl.array())
         self.m_cover2 = Mesh(self.ctx, prog, C3.snow_cover(C2.terrain_h2, -C2.HALF - 10, C2.HALF + 10, -C2.HALF - 10,

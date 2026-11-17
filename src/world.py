@@ -560,6 +560,20 @@ class World:
                 self.add_tree(x + math.sin(a) * k * ln / 5, z + math.cos(a) * k * ln / 5, 0.3)
 
         self._campfire(b, rng)
+        # the forest floor: stumps, mushrooms, ferns, branches, leaf piles
+        import decor
+        drng = random.Random(6101)
+        spots = []
+        for _ in range(900):
+            x, z = drng.uniform(-60, 60), drng.uniform(-60, 44)
+            if float(path_dist(x, z)) < 2.5 or self.near_tree(x, z, 0.9) or math.hypot(x, z - 48) < 10:
+                continue
+            if math.hypot(x - START[0], z - START[1]) < 4:
+                continue
+            spots.append((x, z))
+            if len(spots) >= 420:
+                break
+        decor.forest_floor(b, spots, lambda x, z: float(terrain_h(x, z)), drng)
         self._forest_notes(b)
         self._deer(b)
         self._road(b)
@@ -830,6 +844,7 @@ class World:
                     w = -5.25
                     b.quad_world((x0, w, z0), (x1, w, z0), (x1, w, z1), (x0, w, z1), L.WATER, (1, 1, 1), 0.5)
         self._sewer_props(b)
+        self._decor(b)
         self.sewer_data = b.array()
 
         # basin water (dynamic): unit-height quad at y=0, translated by water level
@@ -1291,6 +1306,24 @@ class World:
                     self.decal(b, c, r, side, rng.choice((L.HAND, L.TALLY, L.G_UNDER, L.G_DONTLOOK)),
                                1.4 if rng.random() < 0.5 else 0.5, 1.4, -3.4)
             self.drip_points.append((x, z))
+
+    def _decor(self, b):
+        """Pipes, junk, barrels and chains along the sewer walls (decor.py), kept off the stairs,
+        the basin, the ladder and anything that already stands there."""
+        import decor
+        busy = list(self.extra_boxes)
+
+        def skip(c, r):
+            if self.basin[r, c] or (c, r) in self.stairs:
+                return True
+            x, z = cell_center(c, r)
+            if self.ladder_pos is not None and math.hypot(x - self.ladder_pos[0], z - self.ladder_pos[2]) < 4.0:
+                return True
+            return any(bx0 - 1.6 < x < bx1 + 1.6 and bz0 - 1.6 < z < bz1 + 1.6 for bx0, bz0, bx1, bz1 in busy)
+
+        cells = [(c, r) for r in range(ROWS) for c in range(COLS) if self.g[r][c] == '.']
+        decor.dress_grid(b, cells, self.kind, cell_center, lambda c, r: float(self.floor[r, c]),
+                         lambda c, r: float(self.ceil[r, c]), 'sewer', 6102, cell=C, boxes=self.extra_boxes, skip=skip)
 
     def add_block(self, c, r):
         pass  # pumps sit on the floor; collision handled by extra boxes below

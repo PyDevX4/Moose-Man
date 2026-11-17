@@ -287,7 +287,8 @@ Edit `NOTES` in `build_exe.py` before publishing. It's what the update screen sh
 | `src/engine.py` | Matrix math, mesh builder, shaders, post-processing (VHS / grain / glitch) |
 | `src/world.py` | The forest, the storm drain, and the sewer grid: collision, pathfinding, geometry, props |
 | `src/moose.py` | The Moose Man's model, animation and AI, plus the valve and herd-head meshes |
-| `src/textures.py` | Procedural textures (noise, bricks, graffiti, signs, flyers) |
+| `src/textures.py` | Procedural textures (noise, bricks, graffiti, signs, flyers), with a 512px detail pass: cracks, rust, grain, moss |
+| `src/decor.py` | Set dressing for every chapter: junk, barrels, pipes, chains, stalactites, stumps, ferns, mushrooms |
 | `src/audio.py` | Synthesized sound and positional audio |
 | `src/lore.py` | Every note, the intro, and the ending text |
 | `src/updater.py` | Checks `latest.json`, downloads and verifies the new build, and swaps it in |

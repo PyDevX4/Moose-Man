@@ -276,7 +276,24 @@ def build():
     lv = SewerLevel()
     b = MeshBuilder()
     dress(lv, b)
+    decorate(lv, b)
     return lv, b.array()
+
+
+def decorate(lv, b):
+    """Junk, pipes and chains, kept off the landing (the fall), the gates and the generators."""
+    import decor
+    busy = list(lv.boxes) + [(g['base'][0] - 1, g['base'][2] - 1, g['base'][0] + 1, g['base'][2] + 1) for g in lv.generators]
+
+    def skip(c, r):
+        if inside(LANDING, c, r) or inside(ANTE, c, r):
+            return True
+        if any(lv.kind(c + dc, r + dr) in 'GHX' for dc in (-2, -1, 0, 1, 2) for dr in (-2, -1, 0, 1, 2)):
+            return True
+        x, z = lv.center(c, r)
+        return any(bx0 - 1.6 < x < bx1 + 1.6 and bz0 - 1.6 < z < bz1 + 1.6 for bx0, bz0, bx1, bz1 in busy)
+
+    decor.dress_level(lv, b, 'deep', 6401, skip=skip)
 
 
 def dress(lv, b):

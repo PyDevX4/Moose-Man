@@ -157,7 +157,7 @@ class ExtrasMixin:
         if self.spots_key:
             c, r = rng.choice(self.spots_key)
             x, z = cc(c, r)
-            w.key_pos = (x + rng.uniform(-0.5, 0.5), W.SEWER_FLOOR + 0.06, z + rng.uniform(-0.5, 0.5))
+            w.key_pos = (x + rng.uniform(-0.3, 0.3), W.SEWER_FLOOR + 0.06, z + rng.uniform(-0.3, 0.3))
         # chapter 2: which firewood is out there
         rng = random.Random(seed * 10 + 2)
         pool = self.w2.wood_pool
@@ -175,7 +175,7 @@ class ExtrasMixin:
         picks = pick_spread(rng, self.spots_fuse, len(lv4.fuses), 20.0, lambda s: lv4.center(*s))
         for fu, (c, r) in zip(lv4.fuses, picks):
             x, z = lv4.center(c, r)
-            fu.update(pos=(x + rng.uniform(-0.5, 0.5), lv4.y0 + 0.05, z + rng.uniform(-0.5, 0.5)), yaw=rng.random() * 6)
+            fu.update(pos=(x + rng.uniform(-0.3, 0.3), lv4.y0 + 0.05, z + rng.uniform(-0.3, 0.3)), yaw=rng.random() * 6)
         # chapter 5's pieces are placed by its own level
         if hasattr(self, 'randomize_ch5'):
             self.randomize_ch5(random.Random(seed * 10 + 5))

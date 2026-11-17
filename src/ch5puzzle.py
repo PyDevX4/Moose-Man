@@ -77,7 +77,7 @@ class Ch5PuzzleMixin:
         self.c5_papers = []
         for i, (c, r) in zip(order, picks):
             x, z = fac.center(c, r)
-            self.c5_papers.append({'digit': i, 'pos': (x + rng.uniform(-0.5, 0.5), 0.02, z + rng.uniform(-0.5, 0.5)),
+            self.c5_papers.append({'digit': i, 'pos': (x + rng.uniform(-0.3, 0.3), 0.02, z + rng.uniform(-0.3, 0.3)),
                                    'rot': rng.random() * 6})
         # four switches on the machine floor, two for each machine
         picks = pick_spread(rng, self.spots_switch, 4, 24.0, lambda s: fac.center(s[0], s[1]))
