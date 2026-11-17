@@ -44,9 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "New puzzles. Ch1: flood-gate levers, a bigger sewer and a key to find. Ch2: light the stove, take the knife.",
-    "Ch3: four levers, and a minecart through the boards. A rifle hit stuns. The Moose Man hunts differently.",
-    "Now in your browser and on phones too, with cross-play co-op: pydevx4.github.io/Moose-Man",
+    "Your progress now saves to your account and syncs between the PC and the browser version.",
+    "Log in on any device and pick up where you left off: pydevx4.github.io/Moose-Man",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

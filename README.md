@@ -193,6 +193,12 @@ Set it up once with `supabase/mooseman_accounts.sql` in the Supabase SQL editor,
 made-up email that nothing is ever sent to. Admins (`is_admin = true`, set in the Table Editor)
 get a menu on the **`** key, which currently has **Unlock all chapters**.
 
+**Your progress saves to your account** and syncs between devices, so the PC and the browser
+version share it. When you log in, the newer of the two saves wins. Saves on a device from before
+you had an account go up the first time you log in there, but another account's save is never
+copied into yours. Guests save only on their own device. It uses a `mooseman_saves` table
+(`supabase/mooseman_saves.sql`), and each player can only read and write their own row.
+
 ## Saving
 
 **CONTINUE** on the title screen picks up where you left off: the start of

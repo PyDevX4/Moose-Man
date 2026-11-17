@@ -113,7 +113,16 @@ def load_progress():
         return {}
 
 
+SAVE_HOOK = [None]       # the account's cloud sync hears about every save
+
+
 def save_progress(p):
+    if SAVE_HOOK[0] is not None:
+        SAVE_HOOK[0](p)
+    write_progress_local(p)
+
+
+def write_progress_local(p):
     if WP.WEB:
         WP.save_json('progress', p)
         return
@@ -359,6 +368,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         self.init_coop(prog)
         self.init_extras(prog)
         self.init_account()
+        SAVE_HOOK[0] = self.on_progress_saved
         self.progress = load_progress()
         self.loading_screen("listening for hooves...")
         yield
@@ -3295,6 +3305,9 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
 
     def save_prog(self):
         save_progress(self.progress)
+
+    def write_progress_local(self, p):
+        write_progress_local(p)
 
     def kill(self, from_net=False):
         if self.state != 'play' and not (self.mp_on() and self.state in PLAYISH):

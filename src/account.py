@@ -144,6 +144,14 @@ class AccountMixin:
         self.delete_arm_t = 0.0
         self.settings_note = ''
         self.settings_note_t = 0.0
+        self.cloud_reset()
+
+    def cloud_reset(self):
+        self.cloud_busy = None        # (what, handle)
+        self.cloud_dirty = False
+        self.cloud_pull = False
+        self.cloud_status = ''        # '', 'syncing', 'synced', 'offline', 'no table'
+        self.cloud_wait = 0.0
 
     def account_start(self):
         """After loading: sign back in if remembered, otherwise the login screen."""
@@ -193,6 +201,7 @@ class AccountMixin:
         self.audio.play('click', 0.5)
 
     def update_login(self, dt):
+        self.update_cloud(dt)
         self.admin_msg_t = max(0.0, self.admin_msg_t - dt)
         self.delete_arm_t = max(0.0, self.delete_arm_t - dt)
         self.settings_note_t = max(0.0, self.settings_note_t - dt)
@@ -223,7 +232,10 @@ class AccountMixin:
             user = j.get('user') or {}
             name = (user.get('user_metadata') or {}).get('mm_username') or extra or self.login_user
             self.acct = {'user': name, 'id': user.get('id'), 'admin': False,
-                         'access': j['access_token'], 'refresh': j.get('refresh_token')}
+                         'access': j['access_token'], 'refresh': j.get('refresh_token'),
+                         'exp': time.time() + float(j.get('expires_in') or 3600)}
+            self.cloud_reset()
+            self.cloud_pull = True
             if what == 'refresh' or self.login_remember:
                 save_remembered({'user': name, 'refresh': j.get('refresh_token')})
             else:
@@ -252,6 +264,7 @@ class AccountMixin:
         rem = load_remembered()
         save_remembered({'user': rem.get('user', '')})
         self.acct = None
+        self.cloud_reset()
         self.admin_open = False
         if self.mp is not None:
             self.mp_leave('')
@@ -260,9 +273,138 @@ class AccountMixin:
 
     def play_as_guest(self):
         self.acct = None
+        self.cloud_reset()
         self.audio.play('click', 0.5)
         self.state = 'title'
         self.menu_sel = 0
+
+    # ================================================================== cloud saves
+    def cloud_label(self):
+        return {'syncing': "  -  syncing...", 'synced': "  -  progress synced", 'offline': "  -  offline, will sync",
+                'no table': "  -  cloud saves not set up"}.get(self.cloud_status, '')
+
+    def on_progress_saved(self, p):
+        """Every save: stamp it, mark whose it is, and queue it for upload."""
+        p['saved_at'] = round(time.time(), 3)
+        if self.acct:
+            p['owner'] = self.acct['id']
+            self.cloud_dirty = True
+
+    def _rest(self, method, path, body=None, extra=None):
+        h = {'apikey': NET.SUPABASE_KEY, 'Authorization': 'Bearer ' + self.acct['access'],
+             'Content-Type': 'application/json'}
+        if extra:
+            h.update(extra)
+        return self.http.start(method, NET.SUPABASE_URL.rstrip('/') + '/rest/v1/' + path, h, body)
+
+    def update_cloud(self, dt):
+        a = self.acct
+        if not a or not a.get('id'):
+            return
+        self.cloud_wait = max(0.0, self.cloud_wait - dt)
+        if self.cloud_busy:
+            what, handle = self.cloud_busy
+            res = self.http.result(handle)
+            if res is None:
+                return
+            self.cloud_busy = None
+            self.cloud_done(what, *res)
+            return
+        if self.cloud_wait > 0 or not (self.cloud_pull or self.cloud_dirty):
+            return
+        if time.time() > a.get('exp', 0) - 60:
+            # the access token has run out: swap the refresh token for a new one first
+            self.cloud_busy = ('refresh', self._auth('token?grant_type=refresh_token', {'refresh_token': a['refresh']}))
+            return
+        self.cloud_status = 'syncing'
+        if self.cloud_pull:
+            self.cloud_busy = ('pull', self._rest('GET', 'mooseman_saves?user_id=eq.%s&select=data' % a['id']))
+        else:
+            self.cloud_dirty = False
+            body = {'user_id': a['id'], 'data': self.progress,
+                    'updated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+            self.cloud_busy = ('push', self._rest('POST', 'mooseman_saves?on_conflict=user_id', body,
+                                                  {'Prefer': 'resolution=merge-duplicates,return=minimal'}))
+
+    def cloud_done(self, what, status, body):
+        a = self.acct
+        if what == 'refresh':
+            if status == 200:
+                j = json.loads(body)
+                a['access'], a['refresh'] = j['access_token'], j.get('refresh_token', a['refresh'])
+                a['exp'] = time.time() + float(j.get('expires_in') or 3600)
+                rem = load_remembered()
+                if rem.get('refresh'):
+                    save_remembered({'user': a['user'], 'refresh': a['refresh']})
+            else:
+                self.cloud_status = 'offline'
+                self.cloud_wait = 20.0
+            return
+        if status == 0:
+            self.cloud_status = 'offline'
+            self.cloud_wait = 15.0
+            if what == 'push':
+                self.cloud_dirty = True
+            return
+        if status == 401:
+            a['exp'] = 0                       # stale token: refresh and try again
+            if what == 'push':
+                self.cloud_dirty = True
+            return
+        if status == 404 or 'mooseman_saves' in (body or '') and status >= 400:
+            self.cloud_status = 'no table'
+            self.cloud_pull = False
+            self.cloud_dirty = False
+            return
+        if what == 'pull':
+            self.cloud_pull = False
+            try:
+                rows = json.loads(body) if status == 200 else None
+            except Exception:
+                rows = None
+            if rows is None:
+                self.cloud_status = 'offline'
+                self.cloud_wait = 15.0
+                self.cloud_pull = True
+                return
+            self.cloud_merge(rows[0]['data'] if rows else None)
+            return
+        if what == 'push':
+            if 200 <= status < 300:
+                self.cloud_status = 'synced' if not self.cloud_dirty else 'syncing'
+            else:
+                self.cloud_status = 'offline'
+                self.cloud_wait = 20.0
+                self.cloud_dirty = True
+
+    def cloud_merge(self, cloud):
+        """Newest wins -- but never copy another account's save into this one."""
+        uid = self.acct['id']
+        local = self.progress
+        owner = local.get('owner')
+        lt = float(local.get('saved_at') or 0)
+        ct = float(cloud.get('saved_at') or 0) if cloud else -1.0
+        mine_here = owner in (None, uid) and any(k != 'owner' for k in local)
+        if cloud is not None and (not mine_here or ct >= lt):
+            self.progress.clear()
+            self.progress.update(cloud)
+            self.progress['owner'] = uid
+            self.write_progress_local(self.progress)
+            self.cloud_status = 'synced'
+            if ct > lt + 1:
+                self.message("Your progress was loaded from your account.", 3.5)
+        elif mine_here:
+            self.progress['owner'] = uid
+            if not self.progress.get('saved_at'):
+                self.progress['saved_at'] = round(time.time(), 3)
+            self.write_progress_local(self.progress)
+            self.cloud_dirty = True
+        else:
+            # this device's save belongs to someone else and the account has none yet: start fresh
+            self.progress.clear()
+            self.progress['owner'] = uid
+            self.write_progress_local(self.progress)
+            self.cloud_status = 'synced'
 
     # ================================================================== the login screen
     LOGIN_ITEMS = ['USERNAME', 'PASSWORD', 'REMEMBER ME', 'LOG IN', 'CREATE ACCOUNT', 'PLAY AS GUEST']
@@ -374,7 +516,7 @@ class AccountMixin:
         if self.state != 'title':
             return
         if self.acct:
-            t = "logged in as %s%s" % (self.acct['user'], "  (admin)" if self.is_admin else '')
+            t = "logged in as %s%s%s" % (self.acct['user'], "  (admin)" if self.is_admin else '', self.cloud_label())
         else:
             t = "playing as a guest"
         self.blit_text(t, self.f_small, (130, 122, 115), (self.UW - 16, 16), 'topright')
@@ -588,7 +730,7 @@ class AccountMixin:
                 continue
             if key == '@who':
                 if self.acct:
-                    t = "Logged in as %s%s" % (self.acct['user'], "  -  ADMIN" if self.is_admin else '')
+                    t = "Logged in as %s%s%s" % (self.acct['user'], "  -  ADMIN" if self.is_admin else '', self.cloud_label())
                 else:
                     t = "Playing as a guest"
                 self.blit_text(t, self.f_hud, col, (rc.x + 14, rc.y + 6))
