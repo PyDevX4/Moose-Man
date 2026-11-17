@@ -144,6 +144,25 @@ grown out of its flank.
 
 Checkpoints: the start of the chapter, and the start of the fight.
 
+## Co-op
+
+**CO-OP** on the title screen. Up to four players go through the story together.
+
+- **HOST GAME** gives you a five-letter room code. Friends pick **JOIN GAME** and type
+  it in. The host chooses the chapter and starts.
+- Puzzles are shared. When anyone opens a valve, stacks wood, pulls a lever, starts a
+  generator or puts in a fuse, it's done for everyone.
+- Nobody moves on alone. The ladder, the cabin, the elevator, the gates and the
+  exits only work once **everyone** is standing there.
+- The monsters go after whoever is closest, or whoever is showing a light. If one
+  catches you, you get the jumpscare and wake at the checkpoint, and everyone else
+  sees it happen. The Beast gets tougher with more players.
+- Pausing doesn't stop the game in co-op, and co-op doesn't change your single-player
+  CONTINUE point.
+
+It runs on Supabase Realtime: messages pass between players and nothing is
+stored. The project URL and its publishable key are in `src/net.py`.
+
 ## Saving
 
 **CONTINUE** on the title screen picks up where you left off: the start of

@@ -137,6 +137,9 @@ class Ch5Mixin:
             self.won_t = -1.0
             self.beast = C5.Beast(C5.BEAST_HOME[0], C5.BEAST_HOME[1], math.pi)
             self.beast.cool = 3.0
+            if self.mp_on():
+                # tougher with more of you
+                self.beast.MAX_HP = self.beast.hp = C5.Beast.MAX_HP * (1.0 + 0.55 * (self.mp_count() - 1))
             self.set_objective("Kill it.  [Left mouse] fire   [R] reload")
         self.set_mouse(True)
 
@@ -346,7 +349,10 @@ class Ch5Mixin:
                 self.spawn_blood(hp[0], hp[1], hp[2], 3, vel=(-d[0] * 2, 1.5, -d[2] * 2), spread=1.8, size=(0.05, 0.12))
                 hit_any = True
             if total > 0:
-                b.damage(total)
+                if self.mp_sim():
+                    b.damage(total)
+                else:
+                    self.mp_tell('beast_dmg', amt=round(total, 2))
                 self.audio.play3d('tackle', b.x, b.z, 80, 0.5)
         if hit_any:
             self.hitmark_t = 0.18
@@ -359,7 +365,7 @@ class Ch5Mixin:
         p = self.player
         w = self.w5
         self.clock_t += dt
-        keys = pygame.key.get_pressed()
+        keys = self.keys()
         fx, fz = math.sin(p.yaw), math.cos(p.yaw)
         rx, rz = -math.cos(p.yaw), math.sin(p.yaw)
         p.fx, p.fz = fx, fz
@@ -456,7 +462,7 @@ class Ch5Mixin:
         if self.c5_phase == 'drain':
             if not self.has_shotgun and self.focus == ('shotgun', 0) and keys[pygame.K_e]:
                 pass
-            if p.z > C5.TUN_Z1 + 1.8:
+            if self.mp_gather('factory', p.z > C5.TUN_Z1 + 1.8):
                 self.start_beast_cs()
                 return
         elif self.c5_phase == 'boss':
@@ -472,7 +478,7 @@ class Ch5Mixin:
                     self.message("The gate. It's opening. There's light behind it.", 5)
                     self.set_objective("Get out.")
                 w.gate_open = min(1.0, w.gate_open + dt / 7.0)
-            if p.z > C5.HALL_Z1 + 7.0:
+            if self.mp_gather('exit5', p.z > C5.HALL_Z1 + 7.0):
                 self.start_exit5()
                 return
             self.update_debris(dt, 0.0)
@@ -485,9 +491,11 @@ class Ch5Mixin:
         b = self.beast
         p = self.player
         w = self.w5
-        b.update(dt, p.x, p.z, p.vx, p.vz, w)
-        info = None
-        for ev in b.events:
+        tgt = self.mp_ai_target(b, 'beast')[0]
+        if self.mp_sim():
+            b.update(dt, tgt.x, tgt.z, tgt.vx, tgt.vz, w)
+            self.resolve_beast_events(b, tgt)
+        for ev in self.mp_events('beast', b):
             kind = ev[0]
             if kind == 'step':
                 d = math.hypot(b.x - p.x, b.z - p.z)
@@ -495,9 +503,7 @@ class Ch5Mixin:
                 self.shake = max(self.shake, clamp(0.6 - d / 40, 0.0, 0.6))
             elif kind == 'slam':
                 # it brings its hands down wherever you are, inside its reach
-                fx_, fz_ = math.sin(b.yaw), math.cos(b.yaw)
-                along = clamp((p.x - b.x) * fx_ + (p.z - b.z) * fz_, 3.5, 9.5)
-                sx, sz = b.x + fx_ * along, b.z + fz_ * along
+                sx, sz = ev[1], ev[2]
                 self.audio.play3d('smash', sx, sz, 90, 1.0)
                 d = math.hypot(p.x - sx, p.z - sz)
                 self.shake = max(self.shake, clamp(1.4 - d / 25, 0.3, 1.4))
@@ -505,13 +511,7 @@ class Ch5Mixin:
                 if d < 5.2:
                     self.hurt5(40 * (1 - d / 10.0))
             elif kind == 'throw':
-                if info is None:
-                    _, info = b.parts(self.time)
-                hx, hy, hz = info['goat_hand']
-                dist = math.hypot(p.x - hx, p.z - hz)
-                tof = clamp(dist / 15.0, 0.9, 2.3)
-                tx, tz = p.x + p.vx * tof * 0.7, p.z + p.vz * tof * 0.7
-                tx, tz = w.collide(tx, tz, 0.5)
+                hx, hy, hz, tx, tz, tof = ev[1:7]
                 vy = (0.0 - hy + 0.5 * 12.0 * tof * tof) / tof
                 self.proj.append([hx, hy, hz, (tx - hx) / tof, vy, (tz - hz) / tof, random.random() * 6])
                 self.markers.append([tx, tz, tof, 2.6, 'land'])
@@ -530,13 +530,8 @@ class Ch5Mixin:
                 self.audio.play('moose_roar', 1.0)
                 self.audio.play('elk_bugle', 0.7)
                 self.shake = max(self.shake, 0.8)
-                pts = [(p.x, p.z)]
-                for _ in range(6):
-                    a = random.random() * 2 * math.pi
-                    r = random.uniform(3.0, 11.0)
-                    pts.append(w.collide(p.x + math.cos(a) * r, p.z + math.sin(a) * r, 1.0))
-                for (x, z) in pts:
-                    self.markers.append([x, z, 1.9 + random.uniform(0, 0.6), 2.4, 'rock'])
+                for (x, z, dl) in ev[1]:
+                    self.markers.append([x, z, dl, 2.4, 'rock'])
                 if 'rain_tip' not in self.flags:
                     self.flags.add('rain_tip')
                     self.message("The roof is coming down -- get out from under the red!", 3.5)
@@ -609,6 +604,45 @@ class Ch5Mixin:
         tf = clamp(1 - d / 40, 0.3, 1.0)
         self.fear += (tf - self.fear) * min(1.0, dt * 2)
 
+    def resolve_beast_events(self, b, tgt):
+        """Pin each attack to a place in the world, aimed at whoever it's after,
+        so everyone's machine sees it land in the same spot."""
+        w = self.w5
+        out = []
+        info = None
+        for ev in b.events:
+            kind = ev[0]
+            if kind == 'slam':
+                fx_, fz_ = math.sin(b.yaw), math.cos(b.yaw)
+                along = clamp((tgt.x - b.x) * fx_ + (tgt.z - b.z) * fz_, 3.5, 9.5)
+                ev = ('slam', round(b.x + fx_ * along, 2), round(b.z + fz_ * along, 2))
+            elif kind == 'throw':
+                if info is None:
+                    _, info = b.parts(self.time)
+                hx, hy, hz = info['goat_hand']
+                dist = math.hypot(tgt.x - hx, tgt.z - hz)
+                tof = clamp(dist / 15.0, 0.9, 2.3)
+                tx, tz = tgt.x + tgt.vx * tof * 0.7, tgt.z + tgt.vz * tof * 0.7
+                tx, tz = w.collide(tx, tz, 0.5)
+                ev = ('throw', round(hx, 2), round(hy, 2), round(hz, 2), round(tx, 2), round(tz, 2), round(tof, 3))
+            elif kind == 'roar':
+                pts = []
+                people = [(tgt.x, tgt.z)]
+                if self.mp_on():
+                    people = [(self.player.x, self.player.z)] if self.local_alive() else []
+                    people += [(q.x, q.z) for q in self.mp.peers.values() if q.alive]
+                    people = people or [(tgt.x, tgt.z)]
+                for (px, pz) in people:
+                    pts.append((round(px, 2), round(pz, 2), round(1.9 + random.uniform(0, 0.6), 2)))
+                    for _ in range(6 if len(people) == 1 else 3):
+                        a = random.random() * 2 * math.pi
+                        r = random.uniform(3.0, 11.0)
+                        x, z = w.collide(px + math.cos(a) * r, pz + math.sin(a) * r, 1.0)
+                        pts.append((round(x, 2), round(z, 2), round(1.9 + random.uniform(0, 0.6), 2)))
+                ev = ('roar', pts)
+            out.append(ev)
+        b.events = out
+
     def find_focus_ch5(self):
         if self.has_shotgun:
             return None
@@ -676,7 +710,8 @@ class Ch5Mixin:
     def draw_world5(self, cam, fwd, lights, parts=(), extras=(), hold=None, fov=None):
         r = self.r
         w = self.w5
-        dyn = list(lights)
+        dyn = self.mp_lights() + list(lights)
+        parts = list(parts) + self.mp_parts(cam, fwd)
         if self.muzzle_t > 0:
             dyn.insert(0, ((cam[0] + fwd[0] * 1.0, cam[1], cam[2] + fwd[2] * 1.0), 14.0, (3.0, 2.0, 1.0)))
         if w.gate_open > 0:

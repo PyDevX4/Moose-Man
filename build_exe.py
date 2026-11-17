@@ -44,10 +44,9 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "CHAPTER FIVE.  A shotgun. A factory. All three of them, at once.",
-    "THE BEAST: a boss fight with health bars. It slams, throws, charges, and brings the roof down.",
-    "Left mouse fires, R reloads. Charge it into a wall and shoot it while it's stunned.",
-    "Kill it, and walk out into the daylight.",
+    "CO-OP: up to four players, every chapter. CO-OP on the title screen -- host, or join with a room code.",
+    "Puzzles are shared. The ladder, the gates and the exits wait until everyone is there.",
+    "Get caught and your friends watch it happen. The Beast gets tougher with more of you.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

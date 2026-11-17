@@ -407,7 +407,7 @@ class Ch4Mixin:
         p = self.player
         lv = self.lv
         self.clock_t += dt
-        keys = pygame.key.get_pressed()
+        keys = self.keys()
         fx, fz = math.sin(p.yaw), math.cos(p.yaw)
         rx, rz = -math.cos(p.yaw), math.sin(p.yaw)
         p.fx, p.fz = fx, fz
@@ -488,24 +488,8 @@ class Ch4Mixin:
                     if self.moose4:
                         self.moose4.hear(gen['pos'][0], gen['pos'][2], 32.0)
                 if gen['progress'] >= 1.0:
-                    gen['running'] = True
-                    gen['progress'] = 1.0
                     pulling = False
-                    self.audio.play('gen_start', 1.0)
-                    if self.moose4:
-                        self.moose4.hear(gen['pos'][0], gen['pos'][2], 45.0)
-                    n = self.gens_running()
-                    if n < 3:
-                        self.message("It coughs, and catches. The lamps on its circuit flicker on. (%d/3)" % n, 4)
-                        self.set_objective("Turn on the three backup generators. (%d/3)" % n)
-                    else:
-                        self.message("The last one catches. Somewhere ahead, the big gate starts to grind open.", 5)
-                        self.set_objective("The gate past the north tunnel is open. Go through.")
-                        lv.gates['G']['opening'] = True
-                        gx = (C4.gate_span(lv, 'G')[0] + C4.gate_span(lv, 'G')[1]) / 2
-                        self.audio.play3d('gate', gx, C4.gate_z(lv, 'G'), 90, 1.0)
-                        if self.moose4:
-                            self.audio.play3d('moose_roar', self.moose4.x, self.moose4.z, 90, 0.9)
+                    self.mp_act('gen', i=i)
             elif not gen['running'] and gen['progress'] > 0 and self.focus != ('generator', i):
                 gen['progress'] = max(0.0, gen['progress'] - dt * 0.6)     # the engine dies if you let go
         self.audio.loop('creak', 0.0)
@@ -530,7 +514,7 @@ class Ch4Mixin:
             self.message("It's enormous. Another gate at the far end -- even bigger.", 5)
             self.set_objective("Find five fuses for the second gate. They'll be in the sewers off the hall.")
         # through the second gate
-        if lv.gates['H']['open'] >= 0.7 and lv.cell_of(p.x, p.z)[1] >= 40:
+        if self.mp_gather('exit4', lv.gates['H']['open'] >= 0.7 and lv.cell_of(p.x, p.z)[1] >= 40):
             self.start_exit4()
             return
         self.update_moose4(dt)
@@ -540,6 +524,53 @@ class Ch4Mixin:
         self.obj_t = max(0.0, self.obj_t - dt)
         self.glitch += (0.0 - self.glitch) * min(1.0, dt * 20)
         self.shake = max(0.0, self.shake - dt * 2)
+
+    def gen_done(self, i):
+        lv = self.lv4
+        gen = lv.generators[i]
+        if gen['running']:
+            return
+        gen['running'] = True
+        gen['progress'] = 1.0
+        self.audio.play('gen_start', 1.0)
+        if self.moose4 and self.mp_sim():
+            self.moose4.hear(gen['pos'][0], gen['pos'][2], 45.0)
+        n = self.gens_running()
+        if n < 3:
+            self.message("It coughs, and catches. The lamps on its circuit flicker on. (%d/3)" % n, 4)
+            self.set_objective("Turn on the three backup generators. (%d/3)" % n)
+        else:
+            self.message("The last one catches. Somewhere ahead, the big gate starts to grind open.", 5)
+            self.set_objective("The gate past the north tunnel is open. Go through.")
+            lv.gates['G']['opening'] = True
+            gx = (C4.gate_span(lv, 'G')[0] + C4.gate_span(lv, 'G')[1]) / 2
+            self.audio.play3d('gate', gx, C4.gate_z(lv, 'G'), 90, 1.0)
+            if self.moose4:
+                self.audio.play3d('moose_roar', self.moose4.x, self.moose4.z, 90, 0.9)
+
+    def fuses_added(self, n, x, z):
+        lv = self.lv4
+        if lv.gates['H']['opening']:
+            return
+        self.fuses_in = min(5, self.fuses_in + n)
+        self.audio.play('fuse', 1.0)
+        if self.fuses_in < 5:
+            self.message("They click in. (%d/5)" % self.fuses_in, 3)
+            self.set_objective("Find five fuses for the second gate. (%d/5)" % (self.fuses_in + self.fuses_carried))
+        else:
+            lv.gates['H']['opening'] = True
+            gx = sum(C4.gate_span(lv, 'H')) / 2
+            self.audio.play3d('gate', gx, C4.gate_z(lv, 'H'), 120, 1.0)
+            self.message("The last fuse buzzes. The gate shudders and starts to lift.", 5)
+            self.set_objective("GO. Get through the gate.")
+            m = self.moose4
+            if m is not None:
+                # he heard that
+                self.audio.play3d('moose_roar', m.x, m.z, 120, 1.0)
+                if self.mp_sim():
+                    m.grace = 0.0
+                    m.state = 'investigate'
+                    m.go_to(x, z)
 
     def update_moose4(self, dt):
         m = self.moose4
@@ -557,8 +588,10 @@ class Ch4Mixin:
             self.fear += (0.0 - self.fear) * min(1.0, dt * 2)
             self.audio.loop('breath', 0)
             return
-        m.update(dt, p, self.flash_on and self.flicker_t <= 0)
-        for ev in m.events:
+        tgt, lit = self.mp_ai_target(m, 'moose4')
+        if self.mp_sim() and not self.mp_frozen('moose4'):
+            m.update(dt, tgt, lit)
+        for ev in self.mp_events('moose4', m):
             if ev == 'step':
                 self.audio.play3d('mstep', m.x, m.z, 50, 1.0)
             elif ev == 'roar':
@@ -579,7 +612,7 @@ class Ch4Mixin:
                     self.flags.add('m4_leave')
                     self.message("He's moving on.", 3)
             elif ev == 'kill':
-                self.kill()
+                self.mp_caught(tgt, 'moose4')
         m.events = []
         d = math.hypot(m.x - p.x, m.z - p.z)
         tf = clamp(1 - d / 26, 0, 1)
@@ -629,6 +662,7 @@ class Ch4Mixin:
         if kind == 'fuse':
             fu = lv.fuses[key]
             fu['taken'] = True
+            self.mp_tell('fuse_take', i=key)
             self.fuses_carried += 1
             self.audio.play('wood_pick', 0.5)
             have = self.fuses_carried + self.fuses_in
@@ -641,25 +675,9 @@ class Ch4Mixin:
             if self.fuses_carried <= 0:
                 self.message("The fuse box. %d of 5 slots filled." % self.fuses_in, 3)
                 return
-            self.fuses_in += self.fuses_carried
+            n = self.fuses_carried
             self.fuses_carried = 0
-            self.audio.play('fuse', 1.0)
-            if self.fuses_in < 5:
-                self.message("They click in. (%d/5)" % self.fuses_in, 3)
-                self.set_objective("Find five fuses for the second gate. (%d/5)" % self.fuses_in)
-            else:
-                lv.gates['H']['opening'] = True
-                gx = sum(C4.gate_span(lv, 'H')) / 2
-                self.audio.play3d('gate', gx, C4.gate_z(lv, 'H'), 120, 1.0)
-                self.message("The last fuse buzzes. The gate shudders and starts to lift.", 5)
-                self.set_objective("GO. Get through the gate.")
-                m = self.moose4
-                if m is not None:
-                    # he heard that
-                    m.grace = 0.0
-                    m.state = 'investigate'
-                    m.go_to(self.player.x, self.player.z)
-                    self.audio.play3d('moose_roar', m.x, m.z, 120, 1.0)
+            self.mp_act('fuse_in', n=n, x=round(self.player.x, 2), z=round(self.player.z, 2))
         elif kind == 'generator':
             pass            # held, not pressed
 
@@ -763,7 +781,8 @@ class Ch4Mixin:
     def draw_world4(self, cam, fwd, lights, parts=(), extras=(), hold=None, fov=None):
         r = self.r
         lv = self.lv4
-        all_lights = list(lights)
+        all_lights = self.mp_lights() + list(lights)
+        parts = list(parts) + self.mp_parts(cam, fwd)
         cand = []
         for i, L_ in enumerate(lv.lights):
             if not self.light_on(L_):
@@ -855,7 +874,7 @@ class Ch4Mixin:
         lp = self.held_lantern_pos(cam, p.yaw, p.pitch)
         lit = self.flash_on and self.flicker_t <= 0
         lights = [((lp[0], lp[1] + 0.2, lp[2]), 10.0, self.lantern_col())] if lit else []
-        parts = [self.moose4_parts()] if self.moose4 is not None else []
+        parts = [self.moose4_parts()] if self.moose4 is not None and not self.mp_hidden('moose4') else []
         self.draw_world4(cam, fwd, lights, parts=parts, extras=self.debris_extras(), hold=(True, p.yaw, p.pitch))
 
     def render_scare_ch4(self, cam, yaw, fwd, k):
