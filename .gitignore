@@ -5,3 +5,4 @@ dist/
 *.spec
 *.exe
 autotest_out/
+web/.gh-pages/

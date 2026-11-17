@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>Moose Man</title>
+<link rel="icon" href="favicon.png">
+<style>
+  :root { --red: #c2261c; --ink: #e8ddd0; --dim: #8d8378; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; color: var(--ink);
+    font-family: Georgia, 'Times New Roman', serif; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; background: #000; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #000; z-index: 10; text-align: center; padding: 16px; box-sizing: border-box; }
+  #start h1 { font-size: clamp(42px, 9vw, 96px); letter-spacing: 0.08em; margin: 0 0 6px; color: var(--red); font-weight: bold; }
+  #start p { margin: 4px 0; color: var(--dim); font-size: 15px; max-width: 520px; }
+  #start button { margin-top: 26px; background: none; border: 1px solid var(--red); color: var(--ink); font: inherit;
+    font-size: 22px; letter-spacing: 0.2em; padding: 12px 34px; cursor: pointer; }
+  #start button:hover { background: #2a0806; }
+  #start .warn { font-size: 12px; margin-top: 22px; color: #6d655d; }
+  #loading { display: none; z-index: 11; }
+  #status { color: var(--dim); font-size: 16px; font-family: Consolas, monospace; }
+  #clicklock { display: none; position: fixed; left: 50%; bottom: 14%; transform: translateX(-50%); z-index: 5;
+    color: var(--ink); background: rgba(0,0,0,0.6); padding: 8px 16px; font: 14px Consolas, monospace; pointer-events: none; }
+  /* touch controls */
+  #pad { display: none; position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+  body.touchplay #pad { display: block; }
+  .btn { position: absolute; width: 62px; height: 62px; border-radius: 50%; border: 2px solid rgba(232,221,208,0.45);
+    background: rgba(0,0,0,0.35); color: var(--ink); font: bold 15px Consolas, monospace; display: flex; align-items: center;
+    justify-content: center; pointer-events: auto; touch-action: none; }
+  .btn.small { width: 46px; height: 46px; font-size: 12px; }
+  .btn.on { background: rgba(194,38,28,0.55); }
+  .btn.lit { border-color: var(--red); }
+  #b-e { right: 112px; bottom: 34px; width: 74px; height: 74px; font-size: 20px; }
+  #b-run { right: 26px; bottom: 110px; }
+  #b-crouch { right: 26px; bottom: 34px; }
+  #b-f { right: 200px; bottom: 34px; }
+  #b-fire { right: 112px; bottom: 124px; width: 74px; height: 74px; display: none; }
+  #b-aim { right: 200px; bottom: 112px; display: none; }
+  #b-r { right: 200px; bottom: 112px; display: none; }
+  body.gun #b-fire { display: flex; }
+  body.aim #b-aim { display: flex; }
+  body.reload #b-r { display: flex; }
+  #b-tab { right: 26px; top: 20px; }
+  #b-esc { right: 82px; top: 20px; }
+  #stick { display: none; position: absolute; width: 120px; height: 120px; border-radius: 50%; z-index: 4;
+    border: 2px solid rgba(232,221,208,0.35); background: rgba(0,0,0,0.25); pointer-events: none; }
+  #knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+    background: rgba(232,221,208,0.45); }
+  #textbox { display: none; position: fixed; left: 50%; top: 20%; transform: translateX(-50%); z-index: 6; gap: 8px; }
+  #textin { width: 0; height: 0; opacity: 0; border: 0; padding: 0; position: absolute; }
+  body.touch #textin { width: 240px; height: 44px; opacity: 1; position: static; font: 22px Consolas, monospace;
+    background: #000; color: var(--ink); border: 2px solid var(--red); padding: 0 10px; }
+  #textok { display: none; }
+  body.touch #textok { display: block; font: bold 18px Consolas, monospace; background: var(--red); color: #fff; border: 0; padding: 0 16px; }
+  #rotate { display: none; z-index: 20; }
+  @media (orientation: portrait) { body.touch #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="start" class="overlay">
+  <h1>MOOSE MAN</h1>
+  <p>October 31, 2003. Hollins Woods. Bring a light.</p>
+  <p>Plays right here in your browser, and with friends on the PC version too (CO-OP).</p>
+  <button id="startbtn">PLAY</button>
+  <p class="warn">Flashing, glitch effects and jumpscares. Headphones recommended.</p>
+</div>
+<div id="loading" class="overlay"><div id="status">loading...</div></div>
+<div id="rotate" class="overlay"><p>Turn your phone sideways.</p></div>
+<div id="clicklock">click to look around</div>
+
+<div id="pad">
+  <div id="stick"><div id="knob"></div></div>
+  <div class="btn" id="b-e" data-key="KeyE">E</div>
+  <div class="btn" id="b-run" data-key="ShiftLeft">RUN</div>
+  <div class="btn" id="b-crouch" data-key="Crouch">DUCK</div>
+  <div class="btn" id="b-f" data-key="KeyF">LIGHT</div>
+  <div class="btn" id="b-fire" data-key="Fire">FIRE</div>
+  <div class="btn" id="b-aim" data-key="Aim">AIM</div>
+  <div class="btn" id="b-r" data-key="KeyR">RLD</div>
+  <div class="btn small" id="b-tab" data-key="Tab">?</div>
+  <div class="btn small" id="b-esc" data-key="Escape">II</div>
+</div>
+<div id="textbox"><input id="textin" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="textok">OK</button></div>
+
+<script>window.MM_VERSION = '__VERSION__';</script>
+<script src="mm.js?v=__VERSION__"></script>
+</body>
+</html>

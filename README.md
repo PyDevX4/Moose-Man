@@ -26,6 +26,12 @@ Download the `.zip` from the [Releases](../../releases) page, unzip it, and run
 `Moose Man.exe`. You don't need to install anything, and it updates itself.
 Headphones are recommended. Play in the dark.
 
+Or **play in your browser**, on a PC or a phone:
+**https://pydevx4.github.io/Moose-Man/**. It's the same game, and it plays co-op with the PC version.
+On a phone, hold it sideways. The left thumb walks (push all the way forward to run), and dragging
+on the right looks around. The buttons are E (use, hold for valves and levers), LIGHT, RUN, DUCK,
+FIRE and AIM when you have a gun, and II to pause.
+
 Or run it from source:
 
 ```bash
@@ -48,13 +54,19 @@ python src/game.py
 
 ## How to escape
 
-- Follow the trail north to the creek and the storm drain.
+- Follow the trail north to the creek and the storm drain. A **flood grate** is
+  locked over it: find the **two release levers** out in the woods (look for the
+  red lamps) and pull them (hold **E**) to raise it.
 - The drain leads down into Overflow System C. **He is down there.**
 - Chamber C is flooded. Open the **five relief valves** hidden around the
-  system to drain it, then reach the service ladder on the far side.
+  system to drain it. Past the drained chamber are the old works, a hall and
+  a maze of rooms. **Search them for the key** to the gate in front of the service
+  ladder.
 - Turning a valve makes noise. He hears footsteps, running, splashing, and
-  valves. He sees your flashlight, and shining it at him is a bad idea.
-  Crouching and switching the light off help you hide.
+  valves. He sees your flashlight from far off. With it off he can still see you
+  **moving**, from closer in. Light off and standing still, he can't see you at
+  all, unless he's right on top of you. Then you run. He moves at your walking
+  pace.
 - After the fifth valve, he stops wandering and starts hunting you.
 - If he catches you, you wake up at the sewer entrance. Valves you have
   already opened stay open.
@@ -77,7 +89,9 @@ snowstorm is coming. Take the lantern and go out for firewood.
   splashing through the rivers are loud. The lake is too deep to cross.
 - If he catches you, you wake on the porch. **Whatever you were carrying is
   lost** (it goes back where you found it). The woodpile keeps what you stacked.
-- With 20 stacked, go inside and take the **rifle** from the rack. Hunt the
+- With 20 stacked, go inside and **light the stove**. Then take the **rifle**
+  from the rack and the **knife** from the table. The Goat Man is still out there
+  until you start butchering, and a rifle hit **stuns** him for a second. Hunt the
   deer grazing about 200 feet straight out in front of the cabin: **right mouse** aims through the scope, **left mouse**
   fires. Your lantern and your running will spook it.
 - Butcher it, then **get back to the cabin**. Something followed you.
@@ -93,11 +107,13 @@ When you wake, something white is crawling toward it.
   stand still**. But it is **slower than you**, and it **can't fit into the
   narrow timbered mineshafts**. Get into one and it can only wait at the
   opening, staring in, until it gives up.
-- Find and pull **three levers** in the caverns (hold **E**). Pulling one is
+- Find and pull **four levers** in the caverns (hold **E**). Pulling one is
   loud, and it will come.
 - With all three pulled, the generator starts and the lights come on. Take the
   **elevator** down from beside the mine office.
-- Down there you'll find what's left of the Goat Man. Then it follows you down.
+- At the bottom, the rails lead into a boarded-up tunnel. Find the lever that
+  powers the **minecart**, get in, and **hold W** to drive it through the boards.
+- Past them you'll find what's left of the Goat Man. Then it follows you down.
   **Find the old way out of the mine.**
 
 Checkpoints: the start of the chapter, and the bottom of the elevator.
@@ -113,7 +129,9 @@ He smashes the floor and you both fall into a far bigger sewer underneath.
 - With all three running, the first big gate opens onto a **huge hall**.
 - Find **five fuses** in the sewers around the hall and put them in the fuse
   box beside the second gate, which is even bigger. Then go through.
-- He hunts **light and movement**, and he's faster than before. He is
+- He hunts **light and movement**, just like up top: light from far off, moving
+  from closer in, and standing still in the dark only fails you if he's right
+  next to you. He moves at your walking pace. He is
   **too big now for the overflow pipes**. Hide in one and he'll tear at the
   opening, then stand there, then leave.
 
@@ -163,6 +181,18 @@ Checkpoints: the start of the chapter, and the start of the fight.
 It runs on Supabase Realtime: messages pass between players and nothing is
 stored. The project URL and its publishable key are in `src/net.py`.
 
+## Accounts
+
+When the game starts you can **log in**, **create an account** (a username and password), or
+**play as a guest**. Tick **Remember me** and it signs you straight back in next time. Settings
+-> Account logs you out.
+
+Accounts live in Supabase Auth, with a `mooseman_profiles` table (username, `is_admin`).
+Set it up once with `supabase/mooseman_accounts.sql` in the Supabase SQL editor, and turn off
+*Confirm email* (Authentication -> Sign In / Providers -> Email). The game gives each username a
+made-up email that nothing is ever sent to. Admins (`is_admin = true`, set in the Table Editor)
+get a menu on the **`** key, which currently has **Unlock all chapters**.
+
 ## Saving
 
 **CONTINUE** on the title screen picks up where you left off: the start of
@@ -181,7 +211,7 @@ hunter who shot the white bull in 1987 and put on its head.
 
 ## Settings
 
-Mouse sensitivity, invert Y, FOV, brightness, volume, render resolution
+Settings are in tabs (Game, Graphics, Audio, Account). Game also has **Delete save data** (press it twice). Mouse sensitivity, invert Y, FOV, brightness, volume, render resolution
 (360p / 480p / 720p / Native), film grain, camcorder effects, FPS counter,
 and **Display Mode**:
 
@@ -208,6 +238,17 @@ python build_exe.py                     # build only -> dist/
 python build_exe.py --bump --publish    # bump the patch version, build, publish to GitHub
 python build_exe.py --minor --publish   # same, but 1.1.x -> 1.2.0
 ```
+
+The browser version is built from the same source:
+
+```bash
+python build_web.py --serve      # build web/dist and try it at http://127.0.0.1:8800
+python build_web.py --publish    # put it on GitHub Pages (the gh-pages branch)
+```
+
+In the browser the Python runs in Pyodide. `web/mm.js` does the WebGL2 drawing (the
+same shaders), WebAudio, input and touch controls, and the co-op connection. `src/engine_web.py`,
+`src/audio_web.py` and `src/web_main.py` are the Python side of that.
 
 Publishing needs the GitHub CLI (`winget install --id GitHub.cli`, then `gh auth login`).
 Each release carries three files: `Moose Man x.y.z.zip`, which is the one people

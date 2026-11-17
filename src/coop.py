@@ -37,7 +37,7 @@ MONSTERS = {1: [('moose', 'moose'), ('chaser', 'moose')],
 
 GATHER_NAMES = {'ladder': "the ladder", 'road': "the road", 'cabin': "the cabin", 'elevator': "the elevator",
                 'exit3': "the way out", 'exit4': "the second gate", 'factory': "the end of the drain",
-                'exit5': "the gate"}
+                'exit5': "the gate", 'cart': "the minecart"}
 
 CHAPTER_NAMES = ["1  -  THE WOODS", "2  -  THE CABIN", "3  -  THE CAVE", "4  -  THE DEEP SEWER", "5  -  THE BEAST"]
 
@@ -196,11 +196,15 @@ class CoopMixin:
     def keys(self):
         if self.block_input:
             return _NoKeys()
+        if getattr(self, 'web_keys', None) is not None:
+            return self.web_keys
         return pygame.key.get_pressed()
 
     def mouse_buttons(self):
         if self.block_input:
             return (False, False, False)
+        if getattr(self, 'web_keys', None) is not None:
+            return self.web_buttons
         return pygame.mouse.get_pressed()
 
     def mp_count(self):
@@ -905,7 +909,8 @@ class CoopMixin:
         self.block_input = False
         fn = {'ladder': self.start_climb, 'road': self.start_cutscene, 'cabin': self.start_window_cs,
               'elevator': self.start_ride, 'exit3': self.start_exit3, 'exit4': self.start_exit4,
-              'factory': self.start_beast_cs, 'exit5': self.start_exit5, 'butcher': self.start_butcher}.get(name)
+              'factory': self.start_beast_cs, 'exit5': self.start_exit5, 'butcher': self.start_butcher,
+              'cart': self.start_cart}.get(name)
         if fn:
             fn()
 
@@ -980,18 +985,22 @@ class CoopMixin:
 
     # ---- chapter 3
     def act_lever(self, a, frm):
-        lv = self.lv_up
+        lv = self.lv_low if a.get('low') else self.lv_up
         lev = lv.levers[a['i']]
         if lev['pulled']:
             return
         lev['pulled'] = True
         lev['progress'] = 1.0
         self.audio.play('clunk', 1.0 if frm is None else 0.6)
+        if lv is self.lv_low:
+            self.ch3_low_lever_done()
+            return
         n = sum(1 for x in lv.levers if x['pulled'])
-        if n < 3:
-            self.message(("The lever slams down. (%d/3)" % n) if frm is None else
-                         ("%s pulled a lever. (%d/3)" % (self.who(frm), n)), 3)
-            self.set_objective("Pull the three levers to start the elevator. (%d/3)" % n)
+        k = len(lv.levers)
+        if n < k:
+            self.message(("The lever slams down. (%d/%d)" % (n, k)) if frm is None else
+                         ("%s pulled a lever. (%d/%d)" % (self.who(frm), n, k)), 3)
+            self.set_objective("Pull the %d levers to start the elevator. (%d/%d)" % (k, n, k))
         else:
             self.power = True
             self.audio.play('drain', 0.5)

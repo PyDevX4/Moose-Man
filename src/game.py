@@ -9,14 +9,21 @@ import threading
 
 import numpy as np
 import pygame
-import moderngl
+try:
+    import moderngl
+except ImportError:
+    moderngl = None              # in the browser
 
 from engine import Renderer, Mesh, T, S, RX, RY, RZ
 from textures import make_textures, L, EMIS
 import world as W
 from world import World, cell_of, cell_center, clamp
 from moose import Moose, pose_moose, pose_goat, car_parts, moose_meshes, valve_mesh, wheel_mesh, herd_head_mesh
-from audio import Audio
+import webplat as WP
+if WP.WEB:
+    from audio_web import Audio
+else:
+    from audio import Audio
 import lore
 import updater
 from version import VERSION
@@ -27,6 +34,8 @@ from engine import MeshBuilder
 from ch4game import Ch4Mixin
 from ch5game import Ch5Mixin
 from coop import CoopMixin, PLAYISH
+from extras import ExtrasMixin
+from account import AccountMixin
 
 TITLE = "Moose Man"
 
@@ -49,6 +58,8 @@ SETTINGS_ITEMS = [
     ('show_fps', 'Show FPS', 'bool', None),
     ('auto_update', 'Auto Update', 'bool', None),
 ]
+if WP.WEB:
+    SETTINGS_ITEMS = [it for it in SETTINGS_ITEMS if it[0] not in ('display', 'auto_update')]
 
 
 def settings_path():
@@ -93,6 +104,8 @@ def progress_path():
 
 
 def load_progress():
+    if WP.WEB:
+        return WP.load_json('progress', {})
     try:
         with open(progress_path(), 'r') as f:
             return json.load(f)
@@ -101,6 +114,9 @@ def load_progress():
 
 
 def save_progress(p):
+    if WP.WEB:
+        WP.save_json('progress', p)
+        return
     try:
         with open(progress_path(), 'w') as f:
             json.dump(p, f, indent=2)
@@ -110,6 +126,9 @@ def save_progress(p):
 
 def load_settings():
     s = dict(DEFAULTS)
+    if WP.WEB:
+        s.update({k: v for k, v in WP.load_json('settings', {}).items() if k in DEFAULTS})
+        return s
     try:
         with open(settings_path(), 'r') as f:
             s.update({k: v for k, v in json.load(f).items() if k in DEFAULTS})
@@ -119,6 +138,9 @@ def load_settings():
 
 
 def save_settings(s):
+    if WP.WEB:
+        WP.save_json('settings', s)
+        return
     try:
         with open(settings_path(), 'w') as f:
             json.dump(s, f, indent=2)
@@ -154,6 +176,14 @@ def wrap(text, fnt, width):
     return lines
 
 
+class _WebClock:
+    """The browser drives the frames; this just reports the frame rate."""
+    fps = 0.0
+
+    def get_fps(self):
+        return self.fps
+
+
 class Player:
     def __init__(self):
         self.reset(0, 0, 0, 0)
@@ -183,10 +213,25 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
-    def __init__(self, autotest=None):
+class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
+    def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
+        if WP.WEB:
+            self._init_web_display(web_size)
+        else:
+            self._init_display()
+        self._init_after_display()
+
+    def _init_web_display(self, size):
+        pygame.font.init()
+        self.screen = None
+        self.ctx = None
+        self.win_w, self.win_h = size
+        self.clock = _WebClock()
+
+    def _init_display(self):
+        autotest = self.autotest
         try:
             import ctypes
             ctypes.windll.user32.SetProcessDPIAware()
@@ -227,6 +272,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.ctx = moderngl.create_context()
         self.clock = pygame.time.Clock()
 
+    def _init_after_display(self):
+
         self.f_hud = font("consolas,lucidaconsole,couriernew", 18, True)
         self.f_small = font("consolas,lucidaconsole,couriernew", 14, True)
         self.f_med = font("timesnewroman,georgia,serif", 26)
@@ -244,7 +291,15 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.ui = pygame.Surface((self.r.ui_w, self.r.ui_h), pygame.SRCALPHA)
         self.UW, self.UH = self.r.ui_w, self.r.ui_h
 
+        if WP.WEB:
+            self.loader = self._load_steps()       # the page steps through it between frames
+            return
+        for _ in self._load_steps():
+            pass
+
+    def _load_steps(self):
         self.loading_screen("summoning the woods...")
+        yield
         self.world = World()
         self.world.build()
         prog = self.r.prog
@@ -257,6 +312,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.m_herd = Mesh(self.ctx, prog, herd_head_mesh())
         self.m_moose = {k: Mesh(self.ctx, prog, v) for k, v in moose_meshes().items()}
         self.loading_screen("the snow is coming...")
+        yield
         # chapter 2: the cabin in the snow
         self.w2 = C2.World2()
         self.w2.build()
@@ -279,6 +335,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.m_moose['shard'] = Mesh(self.ctx, prog, unit_cube(L.GLOW, (0.6, 0.68, 0.75)))
         # chapter 3: the cave, the mine, the blizzard
         self.loading_screen("the mine is waiting...")
+        yield
         self.lv_up = C3.build_upper()
         self.lv_low = C3.build_lower()
         bu, bl = MeshBuilder(), MeshBuilder()
@@ -294,12 +351,17 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.m_bulb = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (1.0, 0.78, 0.5)))
         # chapter 4: the deep sewer
         self.loading_screen("he is getting bigger...")
+        yield
         self.init_ch4(prog)
         self.loading_screen("all three of them...")
+        yield
         self.init_ch5(prog)
         self.init_coop(prog)
+        self.init_extras(prog)
+        self.init_account()
         self.progress = load_progress()
         self.loading_screen("listening for hooves...")
+        yield
         self.audio = Audio(self.settings['volume'] / 100.0)
 
         self.player = Player()
@@ -325,9 +387,11 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.update_state = ""       # "", "working", "failed"
         self.update_got = 0.0
         self.quit_now = False        # set once the swap script has been started
-        if not autotest:
+        if not self.autotest and not WP.WEB:
             updater.tidy()
             updater.check_async(self._update_found)
+        if not self.autotest:
+            self.account_start()
 
     # ------------------------------------------------------------------ helpers
     def loading_screen(self, text):
@@ -337,10 +401,14 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.r.fbo.use()
         self.r.fbo.clear(0, 0, 0, 1)
         self.r.finish(pygame.image.tobytes(self.ui, 'RGBA'), 0, {'bright': 1})
-        pygame.display.flip()
-        pygame.event.pump()
+        if not WP.WEB:
+            pygame.display.flip()
+            pygame.event.pump()
 
     def set_mouse(self, grab):
+        if WP.WEB:
+            WP.js.mm.setGrab(bool(grab))
+            return
         pygame.event.set_grab(grab)
         pygame.mouse.set_visible(not grab)
         if grab:
@@ -444,6 +512,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         # chapter 4
         self.reset_ch4()
         self.reset_ch5()
+        if hasattr(self, 'm_key'):
+            self.reset_extras()
 
     def respawn(self):
         if self.mp_on():
@@ -510,15 +580,53 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         pygame.quit()
 
     # ------------------------------------------------------------------ events
+    # ------------------------------------------------------------------ the browser version
+    def web_resize(self, w, h):
+        self.win_w, self.win_h = w, h
+        self.r.resize(w, h)
+        self.ui = pygame.Surface((self.r.ui_w, self.r.ui_h), pygame.SRCALPHA)
+        self.UW, self.UH = self.r.ui_w, self.r.ui_h
+
+    def web_mode(self):
+        """What the page should put on top: touch controls, a text box, or nothing."""
+        st = self.state
+        if self.admin_open:
+            return 'menu'
+        if st in ('coopname', 'coopjoin'):
+            return 'text'
+        if st == 'login':
+            if self.login_sel in (0, 1) and not self.login_busy:
+                return 'text|pw' if self.login_sel == 1 else 'text|user'
+            return 'menu'
+        if st == 'play':
+            if self.chapter == 2 and self.has_rifle:
+                return 'play|gun|aim'
+            if self.chapter == 5 and self.has_shotgun:
+                return 'play|gun|reload'
+            return 'play'
+        if st in ('title', 'chapters', 'settings', 'pause', 'update', 'coop', 'lobby', 'note', 'dead', 'ending', 'intro'):
+            return 'menu'
+        return 'watch'
+
     def ui_mouse(self):
-        mx, my = pygame.mouse.get_pos()
+        mx, my = self.web_mouse if WP.WEB else pygame.mouse.get_pos()
         return mx * self.UW / self.win_w, my * self.UH / self.win_h
 
     def handle_event(self, ev):
         if ev.type == pygame.QUIT:
             self.running = False
             return
+        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_BACKQUOTE:
+            if self.is_admin:
+                self.admin_toggle()
+            return
+        if self.admin_open:
+            self.admin_event(ev)
+            return
         st = self.state
+        if st == 'login':
+            self.login_event(ev)
+            return
         if st in ('coop', 'coopname', 'coopjoin', 'lobby'):
             self.coop_event(ev)
             return
@@ -584,7 +692,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             elif ev.type == pygame.MOUSEBUTTONDOWN:
                 self.state = 'play'
         elif st == 'dead':
-            if ev.type == pygame.KEYDOWN and self.dead_t > 1.5:
+            if ev.type == pygame.MOUSEBUTTONDOWN and self.dead_t > 1.5:
+                self.respawn()
+            elif ev.type == pygame.KEYDOWN and self.dead_t > 1.5:
                 if ev.key == pygame.K_ESCAPE:
                     self.to_title()
                 elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
@@ -633,6 +743,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
 
     def title_items(self):
         items = ['CONTINUE', 'PLAY', 'CO-OP', 'SETTINGS', 'QUIT']
+        if WP.WEB:
+            items.remove('QUIT')
         if self.new_build and self.update_state != 'working':
             items.append('UPDATE TO %s' % self.new_build.version)
         return items
@@ -810,13 +922,6 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.set_mouse(True)
         self.message("It's almost midnight. The trail goes north, toward the creek.", 6)
 
-    def settings_rows(self):
-        rows = []
-        y = 108
-        for i in range(len(SETTINGS_ITEMS) + 1):
-            rows.append(pygame.Rect(self.UW // 2 - 300, y + i * 32 - 4, 600, 30))
-        return rows
-
     def change_setting(self, idx, d):
         key, label, kind, rng = SETTINGS_ITEMS[idx]
         s = self.settings
@@ -842,42 +947,6 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.state = self.settings_return
         self.menu_sel = self.title_items().index('SETTINGS') if self.state == 'title' else 1
 
-    def settings_event(self, ev):
-        n = len(SETTINGS_ITEMS)
-        if ev.type == pygame.KEYDOWN:
-            if ev.key == pygame.K_ESCAPE:
-                self.leave_settings()
-            elif ev.key in (pygame.K_UP, pygame.K_w):
-                self.settings_sel = (self.settings_sel - 1) % (n + 1)
-            elif ev.key in (pygame.K_DOWN, pygame.K_s):
-                self.settings_sel = (self.settings_sel + 1) % (n + 1)
-            elif ev.key in (pygame.K_LEFT, pygame.K_a) and self.settings_sel < n:
-                self.change_setting(self.settings_sel, -1)
-            elif ev.key in (pygame.K_RIGHT, pygame.K_d) and self.settings_sel < n:
-                self.change_setting(self.settings_sel, 1)
-            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
-                if self.settings_sel == n:
-                    self.leave_settings()
-                else:
-                    self.change_setting(self.settings_sel, 1)
-        elif ev.type == pygame.MOUSEMOTION:
-            ux, uy = self.ui_mouse()
-            for i, rc in enumerate(self.settings_rows()):
-                if rc.collidepoint(ux, uy):
-                    self.settings_sel = i
-        elif ev.type == pygame.MOUSEBUTTONDOWN:
-            ux, uy = self.ui_mouse()
-            for i, rc in enumerate(self.settings_rows()):
-                if rc.collidepoint(ux, uy):
-                    self.settings_sel = i
-                    if i == n:
-                        if ev.button == 1:
-                            self.leave_settings()
-                    elif ev.button in (1, 4):
-                        self.change_setting(i, 1)
-                    elif ev.button in (3, 5):
-                        self.change_setting(i, -1)
-
     # ------------------------------------------------------------------ interaction
     def find_focus(self):
         p = self.player
@@ -891,8 +960,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         for i, v in enumerate(self.world.valves):
             if not v['done']:
                 cands.append(('valve', i, v['pos']))
-        if self.world.ladder_pos:
+        if self.world.ladder_pos and self.world.keygate_open >= 0.8:
             cands.append(('ladder', 0, self.world.ladder_pos))
+        cands += self.c1_focus_cands()
         for kind, key, pos in cands:
             dx, dy, dz = pos[0] - ex, pos[1] - ey, pos[2] - ez
             d = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -921,6 +991,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         if not self.focus:
             return
         kind, key = self.focus
+        if self.interact_c1(kind):
+            return
         if kind == 'note':
             self.note_id = key
             self.world.notes[key]['read'] = True
@@ -1540,7 +1612,10 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         p = self.player
         x, z = cell_center(9, 18)
         p.reset(x, W.SEWER_FLOOR, z, 0.0)
-        self.flags.update({'snap', 'farcall', 'whisper1', 'tunnel', 'tunnelcall', 'junction'})
+        self.flags.update({'snap', 'farcall', 'whisper1', 'tunnel', 'tunnelcall', 'junction', 'grate'})
+        for lev in self.world.c1_levers:
+            lev.update(pulled=True, progress=1.0, angle=0.8)
+        self.world.grate_open = 1.0
         self.app_done = {0, 1, 2}
         self.app = None
         self.checkpoint = True
@@ -1856,9 +1931,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             self.bolt_t -= dt
             if self.bolt_t <= 0:
                 self.audio.play('bolt', 0.6)
-        if self.ch2_phase == 'wood':
+        if self.ch2_goat_phase():
             self.update_goat(dt)
-        elif self.ch2_phase == 'hunt' and self.deer is not None:
+        if self.ch2_phase == 'hunt' and self.deer is not None:
             tgt, lit = self.mp_ai_target(self.deer, 'deer')
             if self.mp_sim():
                 self.deer.update(dt, tgt, lit)
@@ -1881,7 +1956,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         if gt is None:
             return
         tgt, lit = self.mp_ai_target(gt, 'goat')
-        if self.mp_sim() and not self.mp_frozen('goat'):
+        if self.mp_sim() and not self.mp_frozen('goat') and not self.stunned('goat'):
             gt.update(dt, tgt, lit)
         for ev in self.mp_events('goat', gt):
             if ev == 'step':
@@ -1954,7 +2029,10 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                 return ('woodpile', 0)
             return None
         hz = C2.CABIN_HZ
-        if ph in ('rifle', 'hunt') and math.hypot(p.x - 0.0, p.z - hz) < 1.9:
+        ex = self.ch2_extra_focus()
+        if ex:
+            return ex
+        if ph in ('fire', 'rifle', 'hunt') and math.hypot(p.x - 0.0, p.z - hz) < 1.9:
             return ('door', 0)
         if ph in ('rifle', 'hunt') and not self.has_rifle and math.hypot(p.x - C2.RIFLE_POS[0], p.z - (-hz + 0.3)) < 1.8:
             return ('rifle', 0)
@@ -1969,6 +2047,12 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         kind, key = self.focus
         if kind in ('door', 'rifle', 'deer'):
             self.interact_more_ch2(kind)
+            return
+        if kind == 'stove':
+            self.mp_act('stove')
+            return
+        if kind == 'knife':
+            self.take_knife()
             return
         if kind == 'wood':
             self.wood_taken.add(key)
@@ -1991,19 +2075,13 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         """The door, the rifle and the deer (after the firewood is in)."""
         if kind == 'door':
             self.mp_act('door', open=not self.w2.door_open)
-        elif kind == 'rifle' and self.ch2_phase != 'rifle':
-            # somebody else already took one down: there's another on the rack
-            self.has_rifle = True
-            self.audio.play('bolt', 0.8)
-            self.message("Your father's .30-06.", 3)
         elif kind == 'rifle':
-            self.mp_tell('rifle')
             self.has_rifle = True
-            self.ch2_phase = 'hunt'
             self.audio.play('bolt', 0.8)
-            self.deer = C2.Deer(self.w2, random.Random())
-            self.message("Your father's .30-06. Four rounds left in the box.", 4)
-            self.set_objective("Hunt a deer. One's been grazing straight out in front of the cabin.  [Right mouse] aim  [Left mouse] fire")
+            self.message("Your father's .30-06. A hit will stop anything for a second.", 4)
+            self.check_armed()
+        elif kind == 'deer' and not self.has_knife:
+            self.message("You need the knife. It's on the table in the cabin.", 3)
         elif kind == 'deer':
             if self.mp_on():
                 p = self.player
@@ -2012,15 +2090,10 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                 self.start_butcher()
 
     def start_rifle_phase(self):
-        """20/20. The Goat Man moves off; the rifle is inside."""
-        self.ch2_phase = 'rifle'
-        if self.goat is not None:
-            self.audio.play3d('goat_roar', self.goat.x, self.goat.z, 200, 0.6)
-        self.goat = None
-        self.audio.loop('breath', 0)
-        self.fear = 0.0
-        self.message("That's enough wood. Now you need food. The rifle is inside.", 5)
-        self.set_objective("Go into the cabin and get the rifle.  [E] opens the door")
+        """20/20. Now the stove -- and he is still out there."""
+        self.ch2_phase = 'fire'
+        self.message("That's enough wood. Get the stove going before you freeze.", 5)
+        self.set_objective("Go inside and light the stove.  [E] opens the door")
         self.set_resume(2, 'wood20')        # Chapter Two checkpoint: the woodpile is full
 
     def fire_rifle(self):
@@ -2034,6 +2107,10 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         eye = p.eye()
         f = p.fwd()
         p.pitch = clamp(p.pitch + 0.045, -1.45, 1.45)
+        if self.goat is not None and self.ch2_goat_phase():
+            self.goat.hear(p.x, p.z, 40.0)          # a gunshot carries
+        if self.rifle_hits_monster(eye, f):
+            return
         dr = self.deer
         if dr is None:
             return
@@ -2055,6 +2132,11 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
 
     # ------------------------------------------------------------------ butchering the deer
     def start_butcher(self):
+        # he is gone the moment the knife goes in -- somewhere close, and listening
+        if self.goat is not None:
+            self.audio.play3d('goat_roar', self.goat.x, self.goat.z, 200, 0.6)
+        self.goat = None
+        self.audio.loop('breath', 0)
         self.state = 'butcher'
         self.butcher_t = 0.0
         self.butcher_fired = set()
@@ -2167,7 +2249,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         p = self.player
         c = self.chaser2
         tgt = self.mp_ai_target(c, 'chaser2')[0]
-        sim = self.mp_sim() and not self.mp_frozen('chaser2')
+        sim = self.mp_sim() and not self.mp_frozen('chaser2') and not self.stunned('chaser2')
         dx, dz = tgt.x - c['x'], tgt.z - c['z']
         d = math.hypot(dx, dz)
         if sim and d > 1e-3:
@@ -2467,7 +2549,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         """Render the Chapter 2 map."""
         r = self.r
         w2 = self.w2
-        all_lights = self.mp_lights() + list(lights)
+        all_lights = self.stove_lights() + self.mp_lights() + list(lights)
         parts = list(parts) + self.mp_parts(cam, fwd)
         for L_ in w2.lights:
             x, y, z = L_['pos']
@@ -2494,6 +2576,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             r.draw(self.m_bars)
         if not self.has_rifle:
             r.draw(self.m_rifle, model=T(C2.RIFLE_POS[0], C2.RIFLE_POS[1], -C2.CABIN_HZ + 0.24) @ RY(math.pi / 2) @ RZ(0.05))
+        if not self.has_knife and self.ch2_phase in ('wood', 'fire', 'rifle', 'hunt'):
+            kx, kz = self.knife_spot()
+            r.draw(self.m_knife, model=T(kx, C2.CABIN_Y + 0.8, kz) @ RY(1.3) @ RZ(math.pi / 2))
         for mesh, M in extras:
             r.draw(mesh, model=M)
         for i, (wx, wy, wz, rot) in enumerate(w2.wood_spots):
@@ -2767,7 +2852,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             self.elk = None
             self.goat_found_t = -1.0
             self.power = True
-            self.set_objective("Keep going. Find a way out of the mine.")
+            self.debris = []
+            self.set_objective("The rails lead on through a boarded-up tunnel. Find a way through.")
         self.set_mouse(True)
 
     def continue_ch3_lower(self):
@@ -2800,6 +2886,12 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         lv = self.lv
         self.clock_t += dt
         keys = self.keys()
+        if self.c3_riding:
+            self.update_cart(dt, keys)
+            self.audio.set_listener(p.x, p.z, p.yaw)
+            self.focus = None
+            self.obj_t = max(0.0, self.obj_t - dt)
+            return
         fx, fz = math.sin(p.yaw), math.cos(p.yaw)
         rx, rz = -math.cos(p.yaw), math.sin(p.yaw)
         p.fx, p.fz = fx, fz
@@ -2878,7 +2970,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                     if self.elk:
                         self.elk.hear(lev['pos'][0], lev['pos'][2], 30.0)
                 if lev['progress'] >= 1.0:
-                    self.mp_act('lever', i=i)
+                    self.mp_act('lever', i=i, low=lv is self.lv_low)
                     turning = False
         self.audio.loop('creak', 0.6 if turning else 0.0)
         # the lower mine: what's left of the Goat Man, and then the Elk
@@ -2892,7 +2984,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             if self.goat_found_t >= 0:
                 self.goat_found_t += dt
                 if self.elk is None and self.goat_found_t > 5.0 and self.mp_sim():
-                    ex, ez = lv.center(26, 20)
+                    ex, ez = lv.center(*lv.elk_spawn)
                     self.elk = C3.ElkHunter(lv, ex, ez)
                     self.elk.state = 'investigate'
                     self.elk.go_to(gx + 3.0, gz)
@@ -2902,6 +2994,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             if self.mp_gather('exit3', lv.cell_of(p.x, p.z) == lv.exit):
                 self.start_exit3()
                 return
+        if self.mp_on() and lv is self.lv_low and not self.c3_riding and not self.cart_done:
+            cx, cz = self.cart_pos()
+            self.mp_gather('cart', self.cart_power and math.hypot(p.x - cx, p.z - cz) < 2.2)
         if self.mp_on() and lv is self.lv_up and lv.elevator:
             cx, cz = lv.center(*lv.elevator)
             self.mp_gather('elevator', self.power and math.hypot(p.x - cx, p.z - cz) < 1.7)
@@ -2972,6 +3067,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                     best, bestd = ('lever', i), dot
         if best:
             return best
+        ex = self.ch3_extra_focus()
+        if ex:
+            return ex
         if lv is self.lv_up and lv.elevator:
             cx, cz = lv.center(*lv.elevator)
             if math.hypot(p.x - cx, p.z - cz) < 1.7:
@@ -2982,6 +3080,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         if not self.focus:
             return
         kind, _ = self.focus
+        if kind == 'cart':
+            self.interact_cart()
+            return
         if kind == 'elevator':
             if self.power and self.mp_on():
                 self.message("Everyone has to be in the cage.", 2.5)
@@ -3139,6 +3240,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                 r.draw(self.m_bulb, model=T(x, y, z) @ S(0.07, 0.11, 0.07))
         for lev in lv.levers:
             r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
+        self.draw_c3_dyn(r, lv)
         if lv.elevator:
             cx, cz = lv.center(*lv.elevator)
             r.draw(self.m_cage, model=T(cx, lv.y0 if cage_y is None else cage_y, cz))
@@ -3217,6 +3319,9 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
     # ------------------------------------------------------------------ update
     def update(self, dt):
         self.mp_update(dt)
+        self.update_login(dt)
+        if self.admin_open and not self.mp_on():
+            return
         st = self.state
         if self.mp_on() and st in ('pause', 'note', 'settings'):
             # nobody waits for you in co-op
@@ -3228,7 +3333,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             return
         if st == 'chapters':
             self.locked_t = max(0.0, getattr(self, 'locked_t', 0.0) - dt)
-        if st in ('title', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby'):
+        if st in ('title', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby', 'login'):
             self.title_t += dt
             self.audio.loop('title_amb', 0.8)
             self.audio.loop('forest_amb', 0.35)
@@ -3402,6 +3507,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         else:
             self.update_moose(dt)
         self.update_valves(dt, keys)
+        self.update_c1_extras(dt, keys)
         self.update_herd(dt)
         self.update_ambience(dt)
         # water level
@@ -3416,7 +3522,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             self.message("The water is gone. The stairs lead down... and up the other side.", 5)
         if self.mp_on() and w.ladder_pos and not self.escape:
             lx, _, lz = w.ladder_pos
-            self.mp_gather('ladder', (w.drained or self.valves_done >= 5) and math.hypot(p.x - lx, p.z - lz) < 2.6)
+            self.mp_gather('ladder', (w.drained or self.valves_done >= 5) and w.keygate_open >= 0.8 and
+                           math.hypot(p.x - lx, p.z - lz) < 2.6)
         self.focus = self.find_focus()
         self.obj_t = max(0.0, self.obj_t - dt)
         self.phantom = max(0.0, self.phantom - dt)
@@ -3739,6 +3846,7 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             M = T(*v['pos']) @ RY(v['yaw'])
             r.draw(self.m_valve, model=M)
             r.draw(self.m_wheel, model=M @ RZ(v['angle']))
+        self.draw_c1_dyn(r, cam)
         for h in self.world.herd:
             r.draw(self.m_herd, model=T(*h['pos']) @ RY(h['yaw']) @ S(0.8 + 0.15 * h['scale']))
         for parts in moose_parts_list:
@@ -3756,15 +3864,18 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         self.ui.fill((0, 0, 0, 0))
         st = self.state
         post = None
-        if st in ('title', 'settings', 'update', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby') and \
+        if st in ('title', 'settings', 'update', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby', 'login') and \
                 (st != 'settings' or self.settings_return == 'title'):
             self.render_title_scene()
             post = self.post_params({'fear': 0.15, 'glitch': self.title_glitch()})
-            if st in ('coop', 'coopname', 'coopjoin', 'lobby'):
+            if st == 'login':
+                self.draw_login_ui()
+            elif st in ('coop', 'coopname', 'coopjoin', 'lobby'):
                 self.draw_coop_ui()
             elif st == 'title':
                 self.draw_title_ui()
                 self.draw_coop_ui()
+                self.draw_account_badge()
             elif st == 'chapters':
                 self.draw_chapters_ui()
             elif st == 'update':
@@ -3860,6 +3971,8 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             self.r.fbo.clear(0, 0, 0, 1)
             self.draw_ending_ui()
             post = self.post_params({'fear': 0.0})
+        if self.admin_open:
+            self.draw_admin_ui()
         if self.settings['show_fps']:
             img = self.f_small.render("%d fps" % self.clock.get_fps(), True, (200, 200, 200))
             self.ui.blit(img, (self.UW - img.get_width() - 10, self.UH - 20))
@@ -4058,35 +4171,6 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                 x += random.randint(-3, 3)
             self.blit_text(("> " if sel else "  ") + it, self.f_menu, col, (x - 20, y0 + i * 46))
 
-    def draw_settings_ui(self):
-        self.ui.fill((0, 0, 0, 170))
-        self.blit_text("SETTINGS", self.f_big, (200, 190, 180), (self.UW // 2, 40), 'midtop')
-        rows = self.settings_rows()
-        for i, (key, label, kind, rng) in enumerate(SETTINGS_ITEMS):
-            rc = rows[i]
-            sel = i == self.settings_sel
-            if sel:
-                pygame.draw.rect(self.ui, (80, 10, 10, 150), rc)
-            v = self.settings[key]
-            if kind == 'bool':
-                vs = "ON" if v else "OFF"
-            elif kind == 'float':
-                vs = "%.1f" % v
-            elif kind == 'int':
-                vs = ("%d%%" % v) if key == 'volume' else str(v)
-            else:
-                vs = str(v)
-            col = (230, 220, 210) if sel else (160, 155, 150)
-            self.blit_text(label, self.f_hud, col, (rc.x + 14, rc.y + 6))
-            self.blit_text("<  %s  >" % vs if sel else vs, self.f_hud, col, (rc.right - 14, rc.y + 6), 'topright')
-        rc = rows[-1]
-        sel = self.settings_sel == len(SETTINGS_ITEMS)
-        if sel:
-            pygame.draw.rect(self.ui, (80, 10, 10, 150), rc)
-        self.blit_text("BACK", self.f_hud, (230, 220, 210) if sel else (160, 155, 150), (rc.centerx, rc.y + 6), 'midtop')
-        self.blit_text("arrows / mouse to change  -  left click: next  right click: previous  -  ESC: back",
-                       self.f_small, (120, 115, 110), (self.UW // 2, self.UH - 34), 'midtop')
-
     def draw_intro_ui(self):
         t = self.intro_t
         y = 110
@@ -4184,6 +4268,18 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
                     w = 160
                     pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))
                     pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, v['progress'])), 8))
+            elif kind in ('c1lever', 'c1key', 'keygate'):
+                label, prog_ = self.c1_label(kind, key)
+                if prog_ > 0:
+                    w = 160
+                    pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))
+                    pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, prog_)), 8))
+            elif kind == 'stove':
+                label = "[E] Light the stove"
+            elif kind == 'knife':
+                label = "[E] Take the knife"
+            elif kind == 'cart':
+                label = "[E] Get in the minecart" if self.cart_power else "The minecart (no power)"
             else:
                 label = "[E] Climb the ladder" if self.world.drained else "The ladder"
             self.blit_text(label, self.f_hud, (230, 225, 215), (cx, cy + 24), 'midtop')
@@ -4215,8 +4311,11 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
             # what you are doing, always on screen in Chapter 2
             if self.ch2_phase == 'wood':
                 status = "FIREWOOD  stacked %d/%d   carrying %d" % (self.stacked, C2.WOOD_NEEDED, self.carried)
+            elif self.ch2_phase == 'fire':
+                status = "FIREWOOD  stacked %d/%d   -   light the stove" % (self.stacked, C2.WOOD_NEEDED)
             elif self.ch2_phase == 'rifle':
-                status = "FIREWOOD  stacked %d/%d   -   get the rifle" % (self.stacked, C2.WOOD_NEEDED)
+                status = "THE RIFLE %s    THE KNIFE %s" % ('- got it' if self.has_rifle else '- on the rack',
+                                                         '- got it' if self.has_knife else '- on the table')
             elif self.ch2_phase == 'hunt':
                 status = "RIFLE   [right mouse] aim   [left mouse] fire"
             else:
@@ -4235,7 +4334,10 @@ class Game(CoopMixin, Ch4Mixin, Ch5Mixin):
         elif self.chapter == 3:
             if self.lv is self.lv_up:
                 n = sum(1 for x in self.lv.levers if x['pulled'])
-                status = ("LEVERS %d/3" % n) if n < 3 else "THE ELEVATOR HAS POWER"
+                k = len(self.lv.levers)
+                status = ("LEVERS %d/%d" % (n, k)) if n < k else "THE ELEVATOR HAS POWER"
+            elif not self.cart_done:
+                status = "THE MINECART HAS POWER" if self.cart_power else "FIND POWER FOR THE MINECART"
             else:
                 status = "FIND A WAY OUT"
             self.blit_text(status, self.f_small, (215, 205, 190), (26, 56))

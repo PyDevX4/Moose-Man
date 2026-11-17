@@ -474,13 +474,17 @@ class MooseHunter(C3.ElkHunter):
     """The Moose Man after the change. Hunts light and movement like the
     others, faster, and too big now for the overflow pipes -- hide in one
     and he tears at the opening, then stands there breathing, then goes."""
-    LIGHT_RANGE = 28.0
-    RUN_RANGE = 22.0
-    WALK_RANGE = 12.0
-    CREEP_RANGE = 5.0
+    # a light from far off; moving in the dark from not quite as far; dark and
+    # still he can't see you -- unless he's close, and then you run. He moves
+    # at your walking pace.
+    LIGHT_RANGE = 34.0
+    RUN_RANGE = 26.0
+    WALK_RANGE = 18.0
+    CREEP_RANGE = 8.0
     STILL_RANGE = 0.0
-    CHASE_SPEED = 4.5
-    SPEEDS = {'enter': 2.6, 'investigate': 3.0, 'leave': 2.4, 'roam': 2.0}
+    CLOSE_RANGE = 3.5
+    CHASE_SPEED = 2.7
+    SPEEDS = {'enter': 2.4, 'investigate': 2.4, 'leave': 2.0, 'roam': 1.8}
     KILL_DIST = 2.0
 
     def __init__(self, lv, x, z):

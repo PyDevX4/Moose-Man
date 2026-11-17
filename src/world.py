@@ -10,13 +10,16 @@ from textures import L, EMIS
 C = 2.0
 OX = -11.0
 OZ = 48.0
-COLS = 40
-ROWS = 50
+COLS = 48
+ROWS = 68
 STEP = 0.66
 SEWER_FLOOR = -5.0
 
 PATH_PTS = [(0, -62), (0, -48), (4, -30), (-3, -15), (5, 0), (2, 15), (-4, 28), (0, 40), (0, 47.5)]
 CAMPFIRE = (9.0, 8.0)
+# the two flood-gate release levers out in the woods (x, z, yaw the handle faces)
+C1_LEVERS = [(-23.0, 24.0, math.pi / 2), (21.0, -9.0, -math.pi / 2)]
+KEYGATE = (19, 48)                  # the ladder shaft cell; its gate is on the south edge
 START = (0.0, -50.0)
 
 # ---- the escape: a manhole in the eastern woods, and Route 9 beyond it
@@ -55,6 +58,9 @@ def keep_clear(x, z, margin):
     """Where nothing may grow: the road corridor and the manhole clearing."""
     if ROAD_X0 - 5.5 - margin < x < ROAD_X1 + 5.5 + margin:
         return True
+    for lx, lz, _ in C1_LEVERS:
+        if math.hypot(x - lx, z - lz) < 3.5 + margin:
+            return True
     return math.hypot(x - MANHOLE[0], z - MANHOLE[1]) < 4.0 + margin
 
 
@@ -83,6 +89,16 @@ ROOMS = {
     'holding_hall': (20, 27, 20, 30),
     'nest': (32, 27, 38, 35),
     'chamber': (6, 38, 32, 48),
+    'filter': (36, 11, 44, 18),
+    'storage': (40, 28, 46, 36),
+    'works': (2, 48, 44, 52),
+    'lockers': (2, 53, 7, 59),
+    'genroom': (10, 53, 15, 60),
+    'cells': (18, 53, 23, 58),
+    'shrine': (26, 53, 31, 62),
+    'records': (34, 53, 40, 59),
+    'cages': (42, 53, 46, 60),
+    'tank': (8, 61, 32, 66),
 }
 
 
@@ -101,6 +117,10 @@ class World:
         self.water_level = -5.3
         self.water_target = -5.3
         self.ladder_pos = None
+        self.c1_levers = []
+        self.grate_open = 0.0           # the flood grate over the drain: 0 shut .. 1 up
+        self.keygate_open = 0.0         # the gate in front of the ladder
+        self.key_pos = None
         self.x_limit = 54.0          # widened to reach the road during the escape
 
     # ------------------------------------------------------------------ grid
@@ -146,6 +166,29 @@ class World:
             for r in (41, 42, 44, 45):
                 g[r][c] = 'S'
         carve(19, 48, 19, 48, 'X')
+        # ---- east of the pump room: the filter room
+        carve(35, 14, 35, 14)
+        carve(36, 11, 44, 18)
+        for (c, r) in ((38, 13), (42, 13), (38, 16), (42, 16)):
+            g[r][c] = '#'
+        # ---- past the nest: flooded storage
+        carve(39, 29, 39, 29)
+        carve(40, 28, 46, 36)
+        # ---- north of Chamber C (only reachable once it's drained): the old works
+        carve(8, 48, 8, 50)
+        carve(30, 48, 30, 50)
+        carve(2, 51, 44, 52)            # the long hall
+        for door, room in (((4, 53), (2, 54, 7, 59)), ((12, 53), (10, 54, 15, 60)), ((20, 53), (18, 54, 23, 58)),
+                           ((28, 53), (26, 54, 31, 60)), ((37, 53), (34, 54, 40, 59)), ((44, 53), (42, 54, 46, 60))):
+            carve(door[0], door[1], door[0], door[1])
+            carve(*room)
+        for (c, r) in ((13, 57), (36, 56), (38, 56)):
+            g[r][c] = '#'
+        carve(12, 61, 12, 62)
+        carve(28, 61, 28, 62)
+        carve(8, 63, 32, 66)            # the settling tank
+        for c in (14, 20, 26):
+            g[64][c] = '#'
         self.g = g
 
         fl = np.full((ROWS, COLS), SEWER_FLOOR)
@@ -424,11 +467,25 @@ class World:
         b.box((-6.7, 2.0, 47.15), (0.4, 5.0, 1.7), L.CONCRETE, conc)
         b.box((6.7, 2.0, 47.15), (0.4, 5.0, 1.7), L.CONCRETE, conc)
         b.box((0.0, -0.05, 47.3), (2.6, 0.12, 1.2), L.CONCRETE, (0.6, 0.6, 0.58))
-        # broken grate: a few bent bars hanging on the right side
-        for i, bx in enumerate((0.45, 0.7, 0.95)):
-            m = T(bx, 2.35, 47.82) @ RZ(0.25 * (i + 1)) @ T(0, -0.9, 0)
-            b.box((0, 0, 0), (0.05, 1.8, 0.05), L.METAL, (0.8, 0.8, 0.8), m=m)
-        b.box((0.0, 2.33, 47.82), (2.0, 0.06, 0.06), L.METAL)
+        # the flood grate's guide rails (the grate itself is drawn separately: it lifts)
+        for gx in (-1.04, 1.04):
+            b.box((gx, 1.2, 47.72), (0.1, 2.5, 0.14), L.METAL, (0.5, 0.48, 0.45))
+        b.facing_quad((-2.4, 1.5, 47.78), (0, 0, -1), 0.9, 0.6, L.SIGN, (0.85, 0.82, 0.7))
+        # the release levers: on concrete posts, each with a red lamp so you can find them
+        for lx, lz, yaw in C1_LEVERS:
+            h0 = float(terrain_h(lx, lz))
+            m = T(lx, h0, lz) @ RY(yaw)
+            b.box((0, 0.7, -0.15), (0.5, 1.4, 0.3), L.CONCRETE, (0.7, 0.7, 0.68), m=m)
+            b.box((0, 1.15, 0.02), (0.4, 0.6, 0.06), L.METAL, (0.55, 0.5, 0.45), m=m)
+            b.box((0, 1.5, 0.03), (0.46, 0.07, 0.1), L.METAL, (0.85, 0.7, 0.2), m=m)
+            b.box((0, 1.62, -0.15), (0.12, 0.12, 0.12), L.GLOW + EMIS, (1.0, 0.15, 0.1), m=m)
+            pm = m @ T(0, 1.1, 0.12)
+            pos = (float(pm[0, 3]), float(pm[1, 3]), float(pm[2, 3]))
+            self.c1_levers.append({'pos': pos, 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': -0.8})
+            lp = m @ T(0, 1.75, 0.3)
+            self.lights.append({'pos': (float(lp[0, 3]), float(lp[1, 3]), float(lp[2, 3])), 'rad': 5.0,
+                                'col': (0.9, 0.1, 0.06), 'flicker': 'soft'})
+            self.add_tree(lx, lz - 0.15, 0.35)
         self.forest_boxes.append((-6.9, 46.3, -6.5, 48.0))
         self.forest_boxes.append((6.5, 46.3, 6.9, 48.0))
 
@@ -1090,9 +1147,117 @@ class World:
         b.box((lx, 5.95, lz), (1.0, 0.05, 1.0), L.GRATE, (0.8, 0.8, 0.8))
         self.ladder_pos = (lx, -3.6, lz + 0.6)
         self.decal(b, 17, 47, 'N', L.G_ONEMORE, 2.0, 2.0, -2.8)
+        self._north_props(b, rng)
         self.decal(b, 21, 47, 'N', L.HAND, 0.5, 0.5, -3.7)
         self.decal(b, 21, 47, 'N', L.HAND, 0.5, 0.5, -3.3, along=0.5)
         self.drip_points += [cc(10, 42), cc(25, 44), cc(15, 46)]
+
+    def _north_props(self, b, rng):
+        """The rooms added later: the filter room, flooded storage, and the old works past the chamber."""
+        cc = cell_center
+        # ---- the ladder gate's frame
+        gx, gz = OX + KEYGATE[0] * C, OZ + KEYGATE[1] * C
+        for sx in (gx - 0.06, gx + C + 0.06):
+            b.box((sx, -3.2, gz), (0.16, 3.6, 0.2), L.METAL, (0.45, 0.4, 0.35))
+        b.box((gx + C / 2, -1.35, gz), (C + 0.3, 0.2, 0.22), L.METAL, (0.45, 0.4, 0.35))
+        # ---- filter room
+        x, z = cc(40, 14)
+        self.bulb(b, x, -2.0, z, -1.0, flicker='bad')
+        for (c, r) in ((38, 13), (42, 13), (38, 16), (42, 16)):
+            tx, tz = cc(c, r)
+            pipe(b, (tx, -5.0, tz), (tx, -1.0, tz), 0.85, L.METAL, (0.55, 0.6, 0.58), 12)
+            pipe(b, (tx, -1.6, tz), (tx + (1.0 if c < 40 else -1.0) * 2.0, -1.6, tz), 0.15, L.METAL)
+        self.bones(b, *cc(44, 17), 12, rng, 0.6)
+        self.decal(b, 44, 12, 'E', L.TALLY, 1.6, 1.6, -3.4)
+        self.decal(b, 36, 18, 'W', L.HAND, 0.5, 0.5, -3.8)
+        self.drip_points += [cc(40, 12), cc(43, 17)]
+        # ---- flooded storage
+        for (c, r) in ((41, 29), (45, 30), (42, 34), (45, 35), (44, 32)):
+            x, z = cc(c, r)
+            self.crate(b, x, z, rng.uniform(0.7, 1.0), rot=rng.random())
+            if rng.random() < 0.6:
+                self.crate(b, x, z, 0.6, y=SEWER_FLOOR + 0.85, rot=rng.random())
+        for (c, r) in ((43, 31), (41, 33), (44, 35)):
+            self.floor_decal(b, *cc(c, r), 2.2, 2.2, L.WATER)
+        x, z = cc(43, 32)
+        self.bulb(b, x, -2.0, z, -1.0, colr=(0.6, 0.65, 0.8), rad=8.0, flicker='bad')
+        self.sneaker(b, *cc(46, 36), 2.0, (0.2, 0.3, 0.7))
+        self.drip_points += [cc(42, 30), cc(45, 34)]
+        # ---- the works: the long hall
+        for c in (6, 19, 33, 42):
+            x, z = cc(c, 51)
+            self.bulb(b, x, -2.0, z, -1.0, flicker='soft' if c != 33 else 'bad')
+        for zz in (OZ + 51 * C + 0.15, OZ + 53 * C - 0.15):
+            pipe(b, (OX + 2 * C, -1.5, zz), (OX + 45 * C, -1.5, zz), 0.16, L.METAL)
+        self.decal(b, 15, 52, 'N', L.G_DONTLOOK, 1.7, 1.7, -3.2)
+        self.decal(b, 9, 51, 'S', L.HAND, 0.5, 0.5, -3.7)
+        self.floor_decal(b, *cc(24, 52), 1.6, 1.6, L.BLOOD, rot=0.7)
+        for c in range(4, 44, 7):
+            self.drip_points.append(cc(c, 52))
+        # lockers
+        for r in range(54, 60):
+            x, z = cc(2, r)
+            b.box((x - 0.55, -4.1, z), (0.6, 1.8, 0.9), L.METAL, (0.5, 0.58, 0.55))
+            self.add_block_rect(x - 0.9, z - 0.45, x - 0.25, z + 0.45)
+        self.bones(b, *cc(6, 58), 10, rng, 0.6)
+        self.decal(b, 7, 56, 'E', L.TALLY, 1.6, 1.6, -3.4)
+        # the dead generator room
+        x, z = cc(12, 56)
+        b.box((x, -4.4, z), (2.2, 1.2, 1.2), L.METAL, (0.45, 0.48, 0.4))
+        self.add_block_rect(x - 1.1, z - 0.6, x + 1.1, z + 0.6)
+        pipe(b, (x + 0.8, -3.8, z), (x + 0.8, -1.0, z), 0.14, L.METAL)
+        x, z = cc(14, 59)
+        self.bulb(b, x, -2.0, z, -1.0, flicker='bad')
+        # the cells: chains and shoes
+        for c in (18, 20, 22):
+            x, z = cc(c, 58)
+            for k in range(3):
+                b.box((x + (k - 1) * 0.3, -2.4, z + 0.8), (0.03, 2.6, 0.03), L.METAL, (0.6, 0.6, 0.6))
+            self.sneaker(b, x, z, rng.random() * 6, ((0.9, 0.9, 0.9), (0.7, 0.1, 0.1), (0.2, 0.3, 0.7))[c % 3])
+        self.floor_decal(b, *cc(21, 56), 1.8, 1.8, L.BLOOD)
+        self.decal(b, 23, 55, 'E', L.G_UNDER, 1.8, 1.8, -3.2)
+        # the shrine: three of them standing, facing a wall of antlers
+        for c in (27, 29, 31):
+            self.herd_figure(b, *cc(c, 58), 0.0, rng.uniform(1.3, 1.6), L.CLOTH, rng)
+        for k in range(6):
+            x, z = cc(26 + k, 60)
+            m = T(x, -2.6 + 0.3 * math.sin(k), z + 0.85) @ RZ(rng.uniform(-0.5, 0.5))
+            b.box((0, 0, 0), (0.06, 0.9, 0.06), L.BONE, (0.85, 0.8, 0.7), m=m)
+            b.box((0.2, 0.35, 0), (0.4, 0.05, 0.05), L.BONE, (0.85, 0.8, 0.7), m=m)
+        x, z = cc(28, 56)
+        self.bulb(b, x, -2.2, z, -1.0, colr=(0.55, 0.12, 0.08), rad=8.0, flicker='bad')
+        # records office
+        x, z = cc(35, 58)
+        b.box((x, -4.6, z), (1.6, 0.06, 0.8), L.WOOD)
+        self.add_block_rect(x - 0.8, z - 0.4, x + 0.8, z + 0.4)
+        for i in range(14):
+            self.floor_decal(b, x + rng.uniform(-1.0, 4.5), z + rng.uniform(-1.5, 1.0), 0.22, 0.3, L.PAPER, rot=rng.random() * 6)
+        x, z = cc(39, 54)
+        self.bulb(b, x, -2.0, z, -1.0, flicker='soft')
+        # cages
+        for r in (55, 58):
+            for c in (43, 45):
+                x, z = cc(c, r)
+                for k in range(5):
+                    b.box((x - 0.8 + k * 0.4, -4.0, z - 0.8), (0.04, 2.0, 0.04), L.METAL, (0.5, 0.5, 0.5))
+                    b.box((x - 0.8, -4.0, z - 0.8 + k * 0.4), (0.04, 2.0, 0.04), L.METAL, (0.5, 0.5, 0.5))
+                self.bones(b, x, z, 8, rng, 0.5)
+        # the settling tank: the key is on what's left of a city worker at the far west end
+        for c in (11, 23, 30):
+            x, z = cc(c, 64)
+            self.bulb(b, x, -2.0, z, -1.0, colr=(0.5, 0.6, 0.55), rad=8.0, flicker='bad' if c != 11 else 'soft')
+        for c in range(9, 32, 4):
+            self.floor_decal(b, *cc(c, 65), 2.0, 2.0, L.WATER)
+        kx, kz = cc(9, 65)
+        m = T(kx + 0.3, SEWER_FLOOR + 0.02, kz) @ RY(1.1)
+        b.box((0, 0.1, 0), (0.42, 0.2, 1.3), L.CLOTH, (0.85, 0.45, 0.1), m=m)        # orange coveralls
+        b.box((0, 0.12, 0.8), (0.22, 0.22, 0.26), L.BONE, (0.85, 0.8, 0.75), m=m)
+        for s in (-1, 1):
+            b.box((s * 0.3, 0.06, 0.15), (0.08, 0.08, 0.6), L.BONE, (0.85, 0.8, 0.75), m=m @ RY(s * 0.5))
+        self.floor_decal(b, kx + 0.3, kz, 1.8, 1.8, L.BLOOD)
+        self.key_pos = (kx - 0.35, SEWER_FLOOR + 0.06, kz + 0.2)
+        self.decal(b, 8, 65, 'W', L.G_ONEMORE, 2.0, 2.0, -3.0)
+        self.drip_points += [cc(12, 64), cc(22, 63), cc(29, 65)]
 
     def add_block(self, c, r):
         pass  # pumps sit on the floor; collision handled by extra boxes below
@@ -1102,8 +1267,17 @@ class World:
 
     extra_boxes = []
 
+    def dyn_boxes(self):
+        out = []
+        if self.grate_open < 0.8:
+            out.append((-1.1, 47.55, 1.1, 48.1))
+        if self.keygate_open < 0.8:
+            x0, z0 = OX + KEYGATE[0] * C, OZ + KEYGATE[1] * C
+            out.append((x0 - 0.1, z0 - 0.15, x0 + C + 0.1, z0 + 0.15))
+        return out
+
     def collide_extra(self, x, z, rad):
-        for bx0, bz0, bx1, bz1 in self.extra_boxes:
+        for bx0, bz0, bx1, bz1 in self.extra_boxes + self.dyn_boxes():
             nx = clamp(x, bx0, bx1)
             nz = clamp(z, bz0, bz1)
             dx, dz = x - nx, z - nz

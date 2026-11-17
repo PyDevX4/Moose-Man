@@ -44,9 +44,9 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "CO-OP: up to four players, every chapter. CO-OP on the title screen -- host, or join with a room code.",
-    "Puzzles are shared. The ladder, the gates and the exits wait until everyone is there.",
-    "Get caught and your friends watch it happen. The Beast gets tougher with more of you.",
+    "New puzzles. Ch1: flood-gate levers, a bigger sewer and a key to find. Ch2: light the stove, take the knife.",
+    "Ch3: four levers, and a minecart through the boards. A rifle hit stuns. The Moose Man hunts differently.",
+    "Now in your browser and on phones too, with cross-play co-op: pydevx4.github.io/Moose-Man",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

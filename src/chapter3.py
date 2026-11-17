@@ -88,6 +88,7 @@ class Level:
         return not self.open_cell(c, r, elk)
 
     has_outside = False
+    planks = ()
 
     def collide(self, x, z, rad, elk=False):
         for _ in range(3):
@@ -112,7 +113,10 @@ class Level:
                                 dm, sx, sz = min(opts)
                                 x += sx * (dm + rad)
                                 z += sz * (dm + rad)
-            for bx0, bz0, bx1, bz1 in self.boxes:
+            boxes = self.boxes
+            if self.planks:
+                boxes = boxes + [pl['box'] for pl in self.planks if not pl['broken']]
+            for bx0, bz0, bx1, bz1 in boxes:
                 nx = clamp(x, bx0, bx1)
                 nz = clamp(z, bz0, bz1)
                 dx, dz = x - nx, z - nz
@@ -353,36 +357,56 @@ def build_upper():
     return lv
 
 
+LOW_SHIFT = 10       # rows the old lower mine moved north to make room for the rail yard
+
+
 def build_lower():
-    lv = Level(40, 42, -31.0, 0.0, -60.0, seed=404)
+    SH = LOW_SHIFT
+    lv = Level(40, 52, -31.0, 0.0, -60.0, seed=404)
     lv.carve(15, 1, 15, 1, 'E')              # elevator, bottom of the shaft
-    lv.carve(15, 2, 15, 6, ',')
-    lv.carve(10, 7, 20, 12, '.')             # where the Goat Man lies
-    lv.carve(4, 9, 9, 10, '.')               # west tunnel
-    lv.carve(4, 11, 5, 15, '.')
-    lv.carve(2, 16, 9, 21, '.')              # west cavern
-    lv.carve(21, 9, 26, 10, '.')             # east tunnel
-    lv.carve(25, 11, 26, 16, '.')
-    lv.carve(18, 17, 27, 21, '.')            # east cavern
-    lv.carve(10, 19, 17, 20, '.')            # passage between them
-    lv.carve(15, 13, 15, 18, ',')            # a mineshaft shortcut
-    lv.carve(22, 22, 23, 27, '.')            # north from the east cavern
-    lv.carve(12, 28, 34, 35, '.')            # the far cavern
+    lv.carve(15, 2, 15, 3, ',')
+    # ---- the rail yard, before the big cavern
+    lv.carve(11, 4, 19, 7, '.')              # the yard: the cart waits at the head of the rails
+    lv.carve(6, 5, 10, 5, ',')               # west shaft
+    lv.carve(1, 2, 5, 8, '.')                # the pump cavern
+    lv.carve(20, 5, 26, 6, '.')              # east tunnel
+    lv.carve(27, 1, 33, 8, '.')              # the east gallery: the power lever
+    lv.carve(15, 8, 15, SH + 6, 'R')          # the rail tunnel, boarded up
+    # ---- the mine as it was, ten rows on
+    lv.carve(10, SH + 7, 20, SH + 12, '.')     # where the Goat Man lies
+    lv.carve(4, SH + 9, 9, SH + 10, '.')       # west tunnel
+    lv.carve(4, SH + 11, 5, SH + 15, '.')
+    lv.carve(2, SH + 16, 9, SH + 21, '.')      # west cavern
+    lv.carve(21, SH + 9, 26, SH + 10, '.')     # east tunnel
+    lv.carve(25, SH + 11, 26, SH + 16, '.')
+    lv.carve(18, SH + 17, 27, SH + 21, '.')    # east cavern
+    lv.carve(10, SH + 19, 17, SH + 20, '.')    # passage between them
+    lv.carve(15, SH + 13, 15, SH + 18, ',')    # a mineshaft shortcut
+    lv.carve(22, SH + 22, 23, SH + 27, '.')    # north from the east cavern
+    lv.carve(12, SH + 28, 34, SH + 35, '.')    # the far cavern
     for c, r in ((16, 31), (22, 33), (28, 30), (31, 34)):
-        lv.g[r][c] = '#'
-    lv.carve(5, 22, 5, 31, ',')              # mineshaft from the west cavern
-    lv.carve(6, 31, 11, 31, ',')
-    lv.carve(27, 11, 33, 12, '.')            # the long east tunnel
-    lv.carve(32, 13, 33, 27, '.')
-    lv.carve(35, 30, 37, 30, ',')            # a dead-end shaft to hide in
-    lv.carve(20, 36, 20, 39, ',')            # the old adit
-    lv.carve(20, 40, 20, 40, 'X')            # ...and out
+        lv.g[r + SH][c] = '#'
+    lv.carve(5, SH + 22, 5, SH + 31, ',')      # mineshaft from the west cavern
+    lv.carve(6, SH + 31, 11, SH + 31, ',')
+    lv.carve(27, SH + 11, 33, SH + 12, '.')    # the long east tunnel
+    lv.carve(32, SH + 13, 33, SH + 27, '.')
+    lv.carve(35, SH + 30, 37, SH + 30, ',')    # a dead-end shaft to hide in
+    lv.carve(20, SH + 36, 20, SH + 39, ',')    # the old adit
+    lv.carve(20, SH + 40, 20, SH + 40, 'X')    # ...and out
     lv.elevator = (15, 1)
-    lv.exit = (20, 40)
+    lv.exit = (20, SH + 40)
     lv.finish()
     lv.spawn = lv.center(15, 2)
     lv.safe = lv.center(15, 3)
-    lv.goat_cell = (15, 10)
+    lv.goat_cell = (15, SH + 10)
+    lv.elk_spawn = (26, SH + 20)
+    # the minecart runs from the yard up the rail tunnel into the Goat Man's cavern
+    cx, _ = lv.center(15, 8)
+    lv.rail = (cx, lv.oz + 8 * C + 0.4, lv.oz + (SH + 8) * C + 0.6)        # x, z start, z end
+    lv.planks = []
+    for r in (11, 14):
+        z = lv.oz + r * C + 1.0
+        lv.planks.append({'z': z, 'broken': False, 'box': (cx - 1.0, z - 0.15, cx + 1.0, z + 0.15)})
     return lv
 
 
@@ -393,6 +417,7 @@ def dress_upper(lv, b):
     lv.add_lever(b, 1, 20, 'W')             # west cavern
     lv.add_lever(b, 43, 9, 'E')             # deep east cavern
     lv.add_lever(b, 8, 39, 'N')             # the great hall
+    lv.add_lever(b, 44, 30, 'E')            # the northeast cavern
     # crystal cavern: pale glowing crystals, the only light before the generator runs
     for _ in range(26):
         c, r = rng.randint(9, 21), rng.randint(22, 26)
@@ -444,6 +469,47 @@ def dress_lower(lv, b):
     rng = lv.rng
     lv.build_mesh(b)
     y0 = lv.y0
+    SH = LOW_SHIFT
+    # ---- the rail yard: rails, sleepers and timber frames up the boarded tunnel
+    cx = lv.rail[0]
+    z0, z1 = lv.oz + 6 * C, lv.rail[2] + 1.5
+    for sx in (-0.42, 0.42):
+        b.box((cx + sx, y0 + 0.05, (z0 + z1) / 2), (0.07, 0.1, z1 - z0), L.METAL, (0.62, 0.56, 0.5))
+    z = z0 + 0.3
+    while z < z1:
+        b.box((cx, y0 + 0.02, z), (1.2, 0.05, 0.16), L.WOOD, (0.5, 0.42, 0.35))
+        z += 0.6
+    for r in range(8, SH + 7):
+        zc = lv.oz + (r + 0.5) * C
+        for sx in (-0.88, 0.88):
+            b.box((cx + sx, y0 + 1.25, zc), (0.18, 2.5, 0.18), L.WOOD, (0.7, 0.55, 0.4))
+        b.box((cx, y0 + 2.4, zc), (1.95, 0.18, 0.2), L.WOOD, (0.7, 0.55, 0.4))
+    # a buffer stop at the head of the rails, and a sign
+    b.box((cx, y0 + 0.35, z0 + 0.2), (1.3, 0.3, 0.3), L.WOOD, (0.6, 0.3, 0.2))
+    b.facing_quad((cx - 1.6, y0 + 1.7, lv.oz + 8 * C - 0.05), (0, 0, -1), 0.9, 0.6, L.SIGN, (0.85, 0.82, 0.7))
+    # the pump cavern: what's left of a miner, and a long-dead pump
+    px, pz = lv.center(3, 4)
+    m = T(px, y0 + 0.02, pz) @ RY(0.8)
+    b.box((0, 0.1, 0), (0.42, 0.2, 1.3), L.CLOTH, (0.35, 0.4, 0.5), m=m)
+    b.box((0, 0.12, 0.8), (0.22, 0.22, 0.26), L.BONE, (0.85, 0.8, 0.75), m=m)
+    b.box((0.05, 0.3, 0.95), (0.3, 0.12, 0.3), L.METAL, (0.85, 0.7, 0.2), m=m)       # his hard hat
+    x, z = lv.center(2, 7)
+    b.box((x, y0 + 0.6, z), (1.4, 1.2, 1.0), L.METAL, (0.45, 0.42, 0.38))
+    lv.boxes.append((x - 0.7, z - 0.5, x + 0.7, z + 0.5))
+    # the east gallery: the power lever, wired to a junction box over the rails
+    lv.add_lever(b, 33, 4, 'E')
+    for (c, r) in ((29, 2), (31, 7), (28, 6)):
+        x, z = lv.center(c, r)
+        b.box((x, y0 + 0.45, z), (0.9, 0.9, 0.9), L.WOOD, (0.65, 0.6, 0.5))
+        lv.boxes.append((x - 0.45, z - 0.45, x + 0.45, z + 0.45))
+    b.box((cx + 1.1, y0 + 1.6, lv.oz + 7 * C + 1.0), (0.4, 0.5, 0.2), L.METAL, (0.5, 0.48, 0.45))
+    for (c, r) in ((15, 5), (3, 5), (30, 4), (23, 5), (12, 6)):
+        x, z = lv.center(c, r)
+        lv.bulb(b, x, y0 + 4.0, z, float(lv.ceil[r, c]), rad=9.0)
+    for _ in range(10):
+        x, z = lv.center(rng.randint(11, 19), rng.randint(4, 7))
+        m = T(x + rng.uniform(-0.8, 0.8), y0 + 0.04, z + rng.uniform(-0.8, 0.8)) @ RY(rng.random() * 6)
+        b.box((0, 0, 0), (rng.uniform(0.2, 0.5), 0.05, 0.05), L.BONE, (0.85, 0.8, 0.75), m=m)
     # blood pooled around the Goat Man, and dragged off toward the east
     gx, gz = lv.center(*lv.goat_cell)
     for _ in range(9):
@@ -461,14 +527,15 @@ def dress_lower(lv, b):
     # a few work lights still burning down here, and the grey light at the end of the adit
     for (c, r) in ((15, 4), (12, 9), (18, 11), (6, 10), (5, 18), (14, 20), (22, 19), (26, 13),
                    (23, 25), (15, 30), (27, 33), (33, 29), (30, 12), (33, 20), (20, 38), (5, 27)):
+        r += SH
         x, z = lv.center(c, r)
-        lv.bulb(b, x, y0 + (1.95 if lv.kind(c, r) == ',' else 4.0), z, float(lv.ceil[r, c]), rad=9.0)
+        lv.bulb(b, x, y0 + (1.95 if lv.kind(c, r) in ',R' else 4.0), z, float(lv.ceil[r, c]), rad=9.0)
     ex, ez = lv.center(*lv.exit)
     b.facing_quad((ex, y0 + 1.1, ez + C / 2 - 0.05), (0, 0, -1), 1.8, 2.2, L.GLOW + EMIS, (0.55, 0.6, 0.7))
     lv.lights.append({'pos': (ex, y0 + 1.5, ez), 'rad': 9.0, 'col': (0.35, 0.4, 0.5), 'powered': False})
     # old crates and an ore cart
     for (c, r) in ((11, 8), (19, 12), (3, 17), (26, 20)):
-        x, z = lv.center(c, r)
+        x, z = lv.center(c, r + SH)
         b.box((x, y0 + 0.45, z), (0.9, 0.9, 0.9), L.WOOD, (0.65, 0.6, 0.5))
         lv.boxes.append((x - 0.45, z - 0.45, x + 0.45, z + 0.45))
 
@@ -566,6 +633,34 @@ def lever_handle_mesh():
     return b.array()
 
 
+def cart_mesh():
+    """The ore cart you ride up the rail tunnel."""
+    b = MeshBuilder()
+    rust = (0.5, 0.42, 0.35)
+    b.box((0, 0.42, 0), (1.05, 0.08, 1.5), L.METAL, rust)
+    for sx in (-0.5, 0.5):
+        b.box((sx, 0.72, 0), (0.06, 0.6, 1.5), L.METAL, rust)
+    for sz in (-0.72, 0.72):
+        b.box((0, 0.72, sz), (1.05, 0.6, 0.06), L.METAL, rust)
+    b.box((0, 1.02, 0.72), (1.1, 0.06, 0.1), L.METAL, (0.35, 0.3, 0.28))
+    for sz in (-0.5, 0.5):
+        for sx in (-0.42, 0.42):
+            b.cylinder(0.17, 0.17, 0.08, 8, L.BLACK, m=T(sx, 0.18, sz) @ RZ(math.pi / 2) @ T(0, -0.04, 0))
+    b.box((0, 0.25, 0.8), (0.4, 0.2, 0.12), L.METAL, (0.35, 0.33, 0.3))              # the motor
+    b.box((0.35, 1.1, -0.6), (0.08, 0.5, 0.08), L.METAL, (0.85, 0.7, 0.2))           # the throttle lever
+    return b.array()
+
+
+def plank_mesh():
+    """Boards nailed across the rail tunnel."""
+    b = MeshBuilder()
+    for k, (y, a) in enumerate(((0.45, 0.05), (1.05, -0.08), (1.65, 0.04), (2.1, -0.03))):
+        b.box((0, y, 0), (2.05, 0.24, 0.08), L.WOOD, (0.62 + 0.05 * (k % 2), 0.5, 0.36), m=RZ(a))
+    b.box((0, 1.2, -0.06), (0.22, 2.3, 0.06), L.WOOD, (0.5, 0.4, 0.3), m=RZ(0.6))
+    b.facing_quad((0.3, 1.35, 0.05), (0, 0, 1), 0.7, 0.45, L.SIGN, (0.9, 0.85, 0.7))
+    return b.array()
+
+
 def cage_mesh():
     b = MeshBuilder()
     st = (0.45, 0.42, 0.4)
@@ -597,6 +692,7 @@ class ElkHunter:
     CHASE_SPEED = 2.45
     SPEEDS = {'enter': 2.4, 'investigate': 2.2, 'leave': 2.0, 'roam': 1.8}
     KILL_DIST = 1.9
+    CLOSE_RANGE = 0.0
 
     def __init__(self, lv, x, z):
         self.lv = lv
@@ -663,6 +759,7 @@ class ElkHunter:
         else:
             reach, wide = self.WALK_RANGE, False
         self.sense_t -= dt
+        reach = max(reach, self.CLOSE_RANGE)
         in_shaft = not lv.open_cell(*lv.cell_of(px, pz), elk=True)
         if in_shaft and self.STILL_RANGE > 0:
             reach = 0.0          # it knows it can't get you in there

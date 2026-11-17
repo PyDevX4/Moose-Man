@@ -1,7 +1,10 @@
 """Rendering core: math, mesh building, shaders, post-processing."""
 import math
 import numpy as np
-import moderngl
+try:
+    import moderngl
+except ImportError:            # in the browser: see engine_web.py
+    moderngl = None
 
 
 # ---------------------------------------------------------------- math
@@ -532,3 +535,7 @@ class Renderer:
         for k in ('grain', 'vhs', 'bright', 'fear', 'red', 'glitch', 'fade'):
             setu(pp, 'u_' + k, float(post.get(k, 0.0)))
         self.qvao.render(moderngl.TRIANGLE_STRIP)
+
+
+if moderngl is None:
+    from engine_web import Mesh, Renderer  # noqa: F811,E402

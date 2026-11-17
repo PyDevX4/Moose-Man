@@ -420,6 +420,8 @@ def car_parts(x, z, heading):
 
 class Moose:
     """AI for the thing in the sewer."""
+    CLOSE = 3.5          # this close, he knows you're there whatever you do
+    CHASE = 2.7          # the same as your walk: you can keep ahead of him, not lose him by walking
 
     def __init__(self, world):
         self.w = world
@@ -526,17 +528,24 @@ class Moose:
             if self.grace <= 0 and player.y > -9 and self.w.in_grid(px, pz) and abs(player.y - self.y) < 3.5:
                 los = dist < 32 and self.w.los(self.x, self.z, px, pz)
                 if los:
+                    # a light he sees from far off; in the dark he still sees you
+                    # move, from not quite as far; dark and still, he can't --
+                    # unless he's right on top of you, and then you run
                     fx, fz = math.sin(self.yaw), math.cos(self.yaw)
                     cosang = (fx * dx + fz * dz) / max(dist, 1e-4)
-                    vision = 22.0 if flash_on else 9.0
-                    if player.crouch > 0.5:
-                        vision *= 0.6
-                    in_fov = cosang > 0.25 or dist < 4.0
+                    moving = math.hypot(getattr(player, 'vx', 0.0), getattr(player, 'vz', 0.0)) > 0.35
+                    if flash_on:
+                        vision = 30.0
+                    elif moving:
+                        vision = 7.0 if player.crouch > 0.5 else (24.0 if getattr(player, 'sprinting', False) else 16.0)
+                    else:
+                        vision = 0.0
+                    in_fov = cosang > 0.25 or dist < 4.0 or self.state == 'chase'
                     beam = False
                     if flash_on and dist < 20:
                         bx, bz = -dx / dist, -dz / dist
                         beam = (player.fx * bx + player.fz * bz) > 0.93
-                    if (in_fov and dist < vision) or beam or dist < 2.5:
+                    if (in_fov and dist < vision) or beam or dist < self.CLOSE:
                         self.sees = True
             if self.sees and self.state not in ('intro_leave',):
                 self.start_chase(px, pz)
@@ -558,7 +567,7 @@ class Moose:
                 self.state = 'roam'
                 self.timer = 1.0
         elif st == 'roam':
-            speed = 1.5 if not self.hunt else 2.6
+            speed = 1.5 if not self.hunt else 2.2
             if self.hunt:
                 self.repath_t -= dt
                 if self.repath_t <= 0:
@@ -572,7 +581,7 @@ class Moose:
                     self.path_to(tx, tz)
                     self.timer = random.uniform(1.5, 4.0)
         elif st == 'investigate':
-            speed = 2.5
+            speed = 2.2
             if not self.path:
                 speed = 0.0
                 self.timer += dt
@@ -581,8 +590,9 @@ class Moose:
                     self.state = 'roam'
                     self.timer = 1.0
         elif st == 'chase':
-            speed = 4.25
-            can_see = self.w.los(self.x, self.z, px, pz) and self.w.in_grid(px, pz)
+            speed = self.CHASE
+            # he keeps after you while he can actually see you (light, movement, or right there)
+            can_see = self.w.los(self.x, self.z, px, pz) and self.w.in_grid(px, pz) and                 (self.sees or dist < self.CLOSE)
             if can_see:
                 self.last_seen = (px, pz)
                 self.lost_t = 0.0

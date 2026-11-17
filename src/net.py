@@ -14,7 +14,6 @@ import json
 import os
 import random
 import socket
-import ssl
 import string
 import struct
 import threading
@@ -50,6 +49,7 @@ class WebSocket:
         port = u.port or (443 if secure else 80)
         raw = socket.create_connection((host, port), timeout=timeout)
         if secure:
+            import ssl
             raw = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
         self.sock = raw
         key = base64.b64encode(os.urandom(16)).decode()
@@ -316,3 +316,71 @@ class Net:
         self.ok = False
         if self.ws:
             self.ws.close()
+
+
+# ---------------------------------------------------------------------- the browser: the page's WebSocket
+class WebNet:
+    """Same interface as Net, over the browser's own WebSocket (web/mm.js).
+    Same channel and message format, so browser and .exe players share rooms."""
+
+    def __init__(self, code, pid):
+        from webplat import js
+        self.js = js
+        self.code = code
+        self.pid = pid
+        self.topic = 'realtime:mooseman-' + code.lower()
+        self.sent = 0
+        self.reconnects = 0
+        self.drops = []
+        self.handle = js.mm.netOpen(self._url(), self.topic, pid, SUPABASE_KEY if SUPABASE_KEY.startswith('eyJ') else '')
+
+    def _url(self):
+        base = SUPABASE_URL.rstrip('/').replace('https://', 'wss://').replace('http://', 'ws://')
+        return base + '/realtime/v1/websocket?apikey=%s&vsn=1.0.0' % quote(SUPABASE_KEY)
+
+    @property
+    def ok(self):
+        return bool(self.js.mm.netState(self.handle) == 'ok')
+
+    @property
+    def dead(self):
+        return bool(self.js.mm.netState(self.handle) == 'dead')
+
+    @property
+    def closed(self):
+        return self.js.mm.netState(self.handle) in ('dead', 'closed')
+
+    @property
+    def error(self):
+        return str(self.js.mm.netError(self.handle) or '')
+
+    def send(self, kind, data, to=None):
+        inner = {'from': self.pid, 'd': data}
+        if to:
+            inner['to'] = to
+        if self.js.mm.netSend(self.handle, kind, json.dumps(inner, separators=(',', ':'))):
+            self.sent += 1
+            return True
+        return False
+
+    def poll(self):
+        raw = self.js.mm.netTake(self.handle)
+        if not raw:
+            return []
+        out = []
+        for kind, inner in json.loads(raw):
+            if inner.get('to') not in (None, self.pid) or inner.get('from') == self.pid:
+                continue
+            out.append((kind, inner.get('d'), inner.get('from')))
+        return out
+
+    def close(self):
+        self.js.mm.netClose(self.handle)
+
+
+try:
+    from webplat import WEB as _WEB
+except Exception:
+    _WEB = False
+if _WEB:
+    Net = WebNet      # noqa: F811
