@@ -4023,8 +4023,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             post = self.post_params({'fear': 0.0})
         if self.admin_open:
             self.draw_admin_ui()
-        if self.is_admin and st == 'play' and (self.freecam or self.noclip or self.fullbright):
-            tags = [t for t, on in (('FREECAM', self.freecam), ('NOCLIP', self.noclip), ('FULLBRIGHT', self.fullbright)) if on]
+        self.draw_admin_marks()
+        if self.is_admin and st == 'play' and (self.freecam or self.noclip or self.fullbright or self.mark_mon or self.mark_puz):
+            tags = [t for t, on in (('FREECAM', self.freecam), ('NOCLIP', self.noclip), ('FULLBRIGHT', self.fullbright),
+                                    ('MONSTERS', self.mark_mon), ('PUZZLES', self.mark_puz)) if on]
             self.blit_text('   '.join(tags), self.f_small, (230, 90, 70), (self.UW // 2, 8), 'midtop')
         if getattr(self, 'keypad_open', False) and self.state in PLAYISH:
             self.draw_keypad()

@@ -68,7 +68,7 @@ class FactoryLevel(C3.Level):
         keep = {(c, r) for r in range(0, 35) for c in range(25, COLS)}
         keep |= {(c, r) for r in range(34, ROWS) for c in range(39, COLS)}      # the hall's side of the wall
         before = sum(1 for row in self.g for k in row if k != '#')
-        self.grown = grow(self.g, random.Random(5252), factor=2.3, passable='.DB', connect_to='.', room_kinds='.',
+        self.grown = grow(self.g, random.Random(5252), factor=1.6, passable='.DB', connect_to='.', room_kinds='.',
                           barrier='D', bounds=(1, 1, 38, ROWS - 2), keep_out=keep, room_w=(3, 9), room_h=(3, 8),
                           tries=30000)
         self.finish()

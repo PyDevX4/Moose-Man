@@ -186,12 +186,12 @@ class World:
         carve(8, 63, 32, 66)            # the settling tank
         for c in (14, 20, 26):
             g[64][c] = '#'
-        # ---- and three times as much again: rooms and tunnels grown out of the rock around it all.
+        # ---- and half as much again: rooms and tunnels grown out of the rock around it all.
         # The flooded basin is a barrier, so nothing new is a way round draining it.
         from gridgrow import grow
         keep = {(c, r) for r in range(0, 21) for c in range(0, 20)}            # the storm drain and junction
         keep |= {(c, r) for r in range(44, 52) for c in range(16, 24)}         # around the ladder shaft
-        self.grown = grow(g, random.Random(4417), factor=3.0, passable='.~tWSX', connect_to='.',
+        self.grown = grow(g, random.Random(4417), factor=1.5, passable='.~tWSX', connect_to='.',
                           room_kinds='.', barrier='WS', bounds=(1, 1, COLS - 2, ROWS - 2), room_w=(3, 9),
                           room_h=(3, 8), keep_out=keep, tries=40000)
         self.g = g

@@ -199,7 +199,7 @@ Accounts live in Supabase Auth, with a `mooseman_profiles` table (username, `is_
 Set it up once with `supabase/mooseman_accounts.sql` in the Supabase SQL editor, and turn off
 *Confirm email* (Authentication -> Sign In / Providers -> Email). The game gives each username a
 made-up email that nothing is ever sent to. Admins (`is_admin = true`, set in the Table Editor)
-get a menu on the **`** key, with **Unlock all chapters**, **Fullbright**, **Freecam** and **Noclip**. While flying: WASD where you look, Space up, Ctrl/C down, Shift fast.
+get a menu on the **`** key, with **Unlock all chapters**, **TP to chapter**, **Fullbright**, **Freecam**, **Noclip**, **Mark monsters** and **Mark puzzles** (labels through walls, with distances). While flying: WASD where you look, Space up, Ctrl/C down, Shift fast.
 
 **Your progress saves to your account** and syncs between devices, so the PC and the browser
 version share it. When you log in, the newer of the two saves wins. Saves on a device from before
@@ -209,7 +209,7 @@ copied into yours. Guests save only on their own device. It uses a `mooseman_sav
 
 ## Every game is different
 
-The maps are about **three times** as big as they used to be: the Chapter 1 sewers,
+The maps are about **half again** as big as they used to be: the Chapter 1 sewers,
 the Chapter 2 forest, the Chapter 3 caves and mine, and the Chapter 4 deep
 sewer. And the puzzle pieces are somewhere new **every time you play**: the
 valves, the flood levers and the ladder key in Chapter 1, the firewood in

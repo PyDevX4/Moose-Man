@@ -146,6 +146,9 @@ class AccountMixin:
         self.settings_note = ''
         self.settings_note_t = 0.0
         self.fullbright = self.freecam = self.noclip = False
+        self.mark_mon = self.mark_puz = False
+        self.admin_tp = 1
+        self.admin_note = ''
         self.fly_cam = [0.0, 0.0, 0.0]
         self.fly_pos = [0.0, 0.0, 0.0]
         self.cloud_reset()
@@ -527,14 +530,18 @@ class AccountMixin:
         self.blit_text(t, self.f_small, (130, 122, 115), (self.UW - 16, 16), 'topright')
 
     # ================================================================== admin menu (` key)
+    ADMIN_IDS = ['unlock', 'tp', 'fullbright', 'freecam', 'noclip', 'markmon', 'markpuz', 'close']
+
     @property
     def ADMIN_ITEMS(self):
         on = lambda b: 'ON' if b else 'OFF'
-        return ['UNLOCK ALL CHAPTERS', 'FULLBRIGHT:  %s' % on(self.fullbright), 'FREECAM:  %s' % on(self.freecam),
-                'NOCLIP:  %s' % on(self.noclip), 'CLOSE']
+        return ['UNLOCK ALL CHAPTERS', 'TP TO CHAPTER   <  %d  >' % self.admin_tp,
+                'FULLBRIGHT:  %s' % on(self.fullbright), 'FREECAM:  %s' % on(self.freecam),
+                'NOCLIP:  %s' % on(self.noclip), 'MARK MONSTERS:  %s' % on(self.mark_mon),
+                'MARK PUZZLES:  %s' % on(self.mark_puz), 'CLOSE']
 
     def admin_rows(self):
-        x0, y0 = self.UW // 2 - 190, self.UH // 2 - 90
+        x0, y0 = self.UW // 2 - 190, self.UH // 2 - 140
         return [pygame.Rect(x0, y0 + 36 + i * 32, 380, 28) for i in range(len(self.ADMIN_ITEMS))]
 
     # ---- fly about: freecam (the view goes, you stay) and noclip (you go, through everything)
@@ -603,6 +610,9 @@ class AccountMixin:
                 self.admin_sel = (self.admin_sel - 1) % n
             elif ev.key in (pygame.K_DOWN, pygame.K_s):
                 self.admin_sel = (self.admin_sel + 1) % n
+            elif ev.key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d) and self.ADMIN_IDS[self.admin_sel] == 'tp':
+                self.admin_tp = (self.admin_tp - 1 + (1 if ev.key in (pygame.K_RIGHT, pygame.K_d) else -1)) % 5 + 1
+                self.audio.play('click', 0.4)
             elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_e):
                 self.admin_action(self.admin_sel)
         elif ev.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
@@ -611,27 +621,238 @@ class AccountMixin:
                 if rc.collidepoint(ux, uy):
                     self.admin_sel = i
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                        self.admin_action(i)
+                        if self.ADMIN_IDS[i] == 'tp' and ux > rc.x + rc.width * 0.62:
+                            # the arrows: tap the left half of the number to go down, the right to go up
+                            mid = rc.x + rc.width * 0.81
+                            self.admin_tp = (self.admin_tp - 1 + (1 if ux > mid else -1)) % 5 + 1
+                            self.audio.play('click', 0.4)
+                        else:
+                            self.admin_action(i)
 
     def admin_action(self, i):
         self.audio.play('click', 0.5)
-        if i == 0:
+        what = self.ADMIN_IDS[i]
+        if what == 'unlock':
+            self.admin_note = ''
             for k in ('ch2', 'ch3', 'ch4', 'ch5'):
                 self.progress[k] = True
             self.save_prog()
             self.admin_msg_t = 2.5
-        elif i == 1:
+        elif what == 'tp':
+            self.admin_teleport(self.admin_tp)
+        elif what == 'fullbright':
             self.fullbright = not self.fullbright
-        elif i == 2:
+        elif what == 'freecam':
             self.freecam = not self.freecam
             if self.freecam:
                 self.admin_fly_start()
-        elif i == 3:
+        elif what == 'noclip':
             self.noclip = not self.noclip
             if self.noclip:
                 self.admin_fly_start()
+        elif what == 'markmon':
+            self.mark_mon = not self.mark_mon
+        elif what == 'markpuz':
+            self.mark_puz = not self.mark_puz
         else:
             self.admin_toggle()
+
+    def admin_teleport(self, ch):
+        if self.mp_on():
+            self.admin_note = "Not in co-op: everyone has to start a chapter together."
+            self.admin_msg_t = 3.0
+            return
+        self.admin_open = False
+        self.freecam = self.noclip = False
+        self.audio.unpause()
+        self.audio.stop_all()
+        keep = self.progress.get('resume')
+        self.new_game()
+        if ch == 1:
+            self.start_chapter1()
+        elif ch == 2:
+            self.start_daylater()
+        elif ch == 3:
+            self.start_ch3()
+        elif ch == 4:
+            self.start_ch4()
+        else:
+            self.start_ch5()
+        # a teleport doesn't move your CONTINUE point
+        if keep is None:
+            self.progress.pop('resume', None)
+        else:
+            self.progress['resume'] = keep
+        self.save_prog()
+
+    # ---- marks: where the monsters are, where the puzzle pieces are (drawn through walls)
+    def admin_marks(self):
+        out = []
+        ch = self.chapter
+        if self.mark_mon:
+            from coop import MONSTERS
+            names = {'moose': 'MOOSE MAN', 'chaser': 'MOOSE MAN', 'goat': 'GOAT MAN', 'deer': 'DEER', 'chaser2': 'MOOSE MAN',
+                     'elk': 'ELK', 'moose4': 'MOOSE MAN', 'beast': 'THE BEAST'}
+            for attr, _ in MONSTERS.get(ch, []):
+                m = getattr(self, attr, None)
+                if m is None:
+                    continue
+                get = m.get if isinstance(m, dict) else (lambda n, m=m: getattr(m, n, None))
+                if get('x') is None:
+                    continue
+                if attr == 'moose' and not m.active:
+                    continue
+                if attr == 'chaser' and not self.escape:
+                    continue
+                if attr == 'chaser2' and self.ch2_phase != 'run':
+                    continue
+                if attr == 'deer' and self.ch2_phase != 'hunt':
+                    continue
+                y = (get('y') or 0.0) + (13.0 if attr == 'beast' else 2.6)
+                out.append(((get('x'), y, get('z')), names.get(attr, attr.upper()), (240, 70, 55)))
+        if self.mark_puz:
+            for pos, label in self.puzzle_marks():
+                out.append((pos, label, (240, 205, 70)))
+        return out
+
+    def puzzle_marks(self):
+        ch = self.chapter
+        out = []
+        if ch == 1:
+            w = self.world
+            for v in w.valves:
+                if not v['done']:
+                    out.append((v['pos'], 'VALVE'))
+            for lev in w.c1_levers:
+                if not lev['pulled']:
+                    out.append((lev['pos'], 'LEVER'))
+            if w.key_pos and not self.key_taken:
+                out.append((w.key_pos, 'KEY'))
+            if w.keygate_open < 1.0:
+                gx, gz = self.keygate_spot()
+                out.append(((gx, -3.6, gz + 0.6), 'LADDER GATE'))
+        elif ch == 2:
+            p = self.player
+            ph = self.ch2_phase
+            if ph == 'wood':
+                spots = [(math.hypot(x - p.x, z - p.z), (x, y + 0.4, z)) for i, (x, y, z, _) in enumerate(self.w2.wood_spots)
+                         if i not in self.wood_taken]
+                spots.sort(key=lambda s: s[0])
+                out += [(pos, 'WOOD') for _, pos in spots[:12]]
+                import chapter2 as C2
+                out.append(((C2.WOODPILE[0], C2.CABIN_Y + 0.6, C2.WOODPILE[1]), 'WOODPILE'))
+            elif ph == 'fire':
+                sx, sz = self.stove_spot()
+                out.append(((sx, 0.9, sz), 'STOVE'))
+            elif ph in ('rifle', 'hunt'):
+                import chapter2 as C2
+                if not self.has_rifle:
+                    out.append(((C2.RIFLE_POS[0], C2.RIFLE_POS[1], -C2.CABIN_HZ + 0.24), 'RIFLE'))
+                if not self.has_knife:
+                    kx, kz = self.knife_spot()
+                    out.append(((kx, C2.CABIN_Y + 0.8, kz), 'KNIFE'))
+                if ph == 'hunt' and self.deer is not None:
+                    out.append(((self.deer.x, self.deer.y + 1.2, self.deer.z), 'DEER'))
+            elif ph == 'run':
+                import chapter2 as C2
+                out.append(((0.0, C2.CABIN_Y + 1.5, C2.CABIN_HZ), 'CABIN'))
+        elif ch == 3:
+            lv = self.lv
+            for lev in lv.levers:
+                if not lev['pulled']:
+                    out.append((lev['pos'], 'LEVER'))
+            if lv is self.lv_up and lv.elevator:
+                x, z = lv.center(*lv.elevator)
+                out.append(((x, lv.y0 + 1.5, z), 'ELEVATOR'))
+            if lv is self.lv_low:
+                if not self.cart_done:
+                    x, z = self.cart_pos()
+                    out.append(((x, lv.y0 + 1.0, z), 'MINECART'))
+                x, z = lv.center(*lv.exit)
+                out.append(((x, lv.y0 + 1.5, z), 'WAY OUT'))
+        elif ch == 4:
+            lv = self.lv4
+            for g in lv.generators:
+                if not g['running']:
+                    out.append((g['pos'], 'GENERATOR'))
+            for fu in lv.fuses:
+                if not fu['taken']:
+                    out.append((fu['pos'], 'FUSE'))
+            if lv.fusebox:
+                out.append((lv.fusebox['pos'], 'FUSE BOX'))
+        elif ch == 5:
+            import chapter5 as C5
+            if not self.has_shotgun:
+                out.append((C5.SHOTGUN_POS, 'SHOTGUN'))
+            if self.c5_phase == 'drain':
+                for pa in self.c5_papers:
+                    if pa['digit'] not in self.c5_digits:
+                        out.append((pa['pos'], 'PAPER'))
+                if not self.door5_opening:
+                    out.append((self.w5.fac.keypad, 'KEYPAD'))
+                for s in self.c5_switches:
+                    if not s['on']:
+                        out.append((s['pos'], 'SWITCH %d' % (s['machine'] + 1)))
+                if not self.key5:
+                    out.append((self.key5_pos, 'KEY'))
+                if not self.button5:
+                    out.append(((C5.BUTTON[0], C5.BUTTON[1], C5.BUTTON[2]), 'BUTTON' if self.booth5_opening else 'BOOTH'))
+        return out
+
+    def draw_admin_marks(self):
+        if not self.is_admin or self.state not in ('play', 'pause', 'note') or not (self.mark_mon or self.mark_puz):
+            return
+        marks = self.admin_marks()
+        if not marks:
+            return
+        p = self.player
+        cam = p.eye()
+        fx, fy, fz = p.fwd()
+        hl = math.hypot(fx, fz) or 1.0
+        rx, rz = -fz / hl, fx / hl
+        ux, uy, uz = -rz * fy, rz * fx - rx * fz, rx * fy
+        th = math.tan(math.radians(self.settings['fov']) / 2)
+        aspect = self.UW / float(self.UH)
+        used = []
+
+        def place(rc):
+            # nudge a label up until it doesn't cover one already drawn
+            for _ in range(12):
+                if not any(rc.colliderect(u) for u in used):
+                    break
+                rc = rc.move(0, -(rc.height + 1))
+            used.append(rc)
+            return rc
+        marks = sorted(marks, key=lambda m: (m[0][0] - cam[0]) ** 2 + (m[0][1] - cam[1]) ** 2 + (m[0][2] - cam[2]) ** 2)
+        for (x, y, z), label, col in marks:
+            dx, dy, dz = x - cam[0], y - cam[1], z - cam[2]
+            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+            depth = dx * fx + dy * fy + dz * fz
+            if depth > 0.3:
+                sx = (dx * rx + dz * rz) / (depth * th * aspect)
+                sy = (dx * ux + dy * uy + dz * uz) / (depth * th)
+                if abs(sx) <= 1.0 and abs(sy) <= 1.0:
+                    px, py = int((1 + sx) * 0.5 * self.UW), int((1 - sy) * 0.5 * self.UH)
+                    pygame.draw.polygon(self.ui, col + (230,), [(px, py - 7), (px + 6, py), (px, py + 7), (px - 6, py)], 2)
+                    txt = '%s  %dm' % (label, dist)
+                    w_, h_ = self.f_small.size(txt)
+                    rc = place(pygame.Rect(px - w_ // 2, py - 10 - h_, w_, h_))
+                    if rc.bottom < py - 10:
+                        pygame.draw.line(self.ui, col + (120,), (px, py - 8), (px, rc.bottom), 1)
+                    self.blit_text(txt, self.f_small, col, rc.midbottom, 'midbottom')
+                    continue
+            # off screen: an arrow at the edge pointing the way
+            ang = math.atan2(dx * rx + dz * rz, depth if depth > 0 else -1e-3)
+            if depth <= 0:
+                ang = math.copysign(math.pi - abs(ang) * 0.0, ang) if abs(ang) > 0.01 else math.pi
+            ex = self.UW / 2 + math.sin(ang) * (self.UW / 2 - 26)
+            ey = self.UH / 2 - math.cos(ang) * (self.UH / 2 - 26)
+            ex, ey = int(max(20, min(self.UW - 20, ex))), int(max(20, min(self.UH - 20, ey)))
+            pygame.draw.circle(self.ui, col + (200,), (ex, ey), 4)
+            txt = '%s %dm' % (label, dist)
+            w_, h_ = self.f_small.size(txt)
+            rc = place(pygame.Rect(ex - w_ // 2, ey + 6, w_, h_))
+            self.blit_text(txt, self.f_small, col, rc.midtop, 'midtop', alpha=170)
 
     def draw_admin_ui(self):
         rows = self.admin_rows()
@@ -645,7 +866,10 @@ class AccountMixin:
                 pygame.draw.rect(self.ui, (90, 20, 16, 200), rc)
             self.blit_text(it, self.f_small, (240, 230, 220) if sel else (160, 155, 148), (rc.x + 10, rc.y + 6))
         if self.admin_msg_t > 0:
-            self.blit_text("all chapters unlocked", self.f_small, (120, 200, 120), (panel.centerx, panel.bottom + 8), 'midtop')
+            self.blit_text(getattr(self, 'admin_note', '') or "all chapters unlocked", self.f_small, (120, 200, 120),
+                           (panel.centerx, panel.bottom + 8), 'midtop')
+        self.blit_text("arrows / tap the number to pick a chapter", self.f_small, (110, 105, 100),
+                       (panel.centerx, panel.bottom + 26), 'midtop')
 
     # ================================================================== settings, in tabs
     def settings_tab_rows(self):

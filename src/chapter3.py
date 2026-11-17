@@ -45,13 +45,13 @@ class Level:
             for c in range(min(c0, c1), max(c0, c1) + 1):
                 self.g[r][c] = ch
 
-    def grow_map(self, add_cols, add_rows, seed, barrier='', keep_out=(), corridor_kinds='..,'):
-        """Three times the floor: caverns and shafts grown into the rock around the hand-made map."""
+    def grow_map(self, add_cols, add_rows, seed, barrier='', keep_out=(), corridor_kinds='..,', factor=1.5):
+        """More floor (1.5x): caverns and shafts grown into the rock around the hand-made map."""
         from gridgrow import grow, pad
         pad(self.g, add_cols, add_rows)
         self.cols += add_cols
         self.rows += add_rows
-        self.grown = grow(self.g, random.Random(seed), 3.0, passable='.,MEXRGH', connect_to='.,', room_kinds='.',
+        self.grown = grow(self.g, random.Random(seed), factor, passable='.,MEXRGH', connect_to='.,', room_kinds='.',
                           corridor_kinds=corridor_kinds, barrier=barrier, keep_out=keep_out,
                           bounds=(1, 1, self.cols - 2, self.rows - 2), room_w=(3, 9), room_h=(3, 8), tries=40000)
         return self.grown

@@ -44,7 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Admin menu: fullbright, freecam and noclip toggles.",
+    "The big maps are half the size they were (still bigger than the originals).",
+    "Admin menu: mark monsters, mark puzzles, and teleport to any chapter.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

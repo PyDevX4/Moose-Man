@@ -10,7 +10,7 @@ from engine import MeshBuilder, T, S, RX, RY, RZ
 from textures import L, EMIS
 
 WL = 0.0                      # water level (rivers and the lake)
-GROW = 3.0 ** 0.5               # the forest is three times the area it was
+GROW = 1.5 ** 0.5               # the forest is half again the area it was
 HALF = 100.0 * GROW             # the map runs from -HALF to +HALF on both axes
 LAKE = (52.0 * GROW, -42.0 * GROW, 28.0 * GROW, 20.0 * GROW)   # centre x, centre z, radius x, radius z
 RIVERS = [
@@ -21,8 +21,8 @@ RIVERS = [
     [(-170.0, -60.0), (-130.0, -80.0), (-95.0, -70.0), (-70.0, -100.0), (-60.0, -175.0)],
 ]
 WOOD_NEEDED = 20
-WOOD_SPOTS = 200                  # spread over a forest three times the size
-WOOD_POOL = 560                   # ...picked fresh each game from this many clear spots
+WOOD_SPOTS = 100                  # spread over a forest half again the size
+WOOD_POOL = 280                   # ...picked fresh each game from this many clear spots
 CABIN_HX, CABIN_HZ = 2.5, 2.0     # wall centre lines
 DOOR_HINGE_X = -0.5
 WOODPILE = (1.55, 2.9)            # on the porch, right of the door
@@ -197,7 +197,7 @@ class World2:
         planted = []
         n = 0
         tries = 0
-        while n < 3450 and tries < 120000:
+        while n < 1725 and tries < 60000:
             tries += 1
             edge = rng.random() < 0.22
             if edge:
@@ -220,7 +220,7 @@ class World2:
             n += 1
         self._plant(b, planted, rng)
         # snowy rocks and fallen logs
-        for _ in range(420):
+        for _ in range(210):
             x, z = self.random_land(rng, margin=4, min_h=0.2)
             if self.keep_clear(x, z, 1.0):
                 continue
@@ -232,7 +232,7 @@ class World2:
                 b.box((0, sz * 0.66, 0), (sz * 0.7, 0.05, sz * 0.5), L.CONCRETE, (1.9, 1.95, 2.15), m=m)
             if sz > 1.0:
                 self.add_tree(x, z, sz * 0.6)
-        for _ in range(135):
+        for _ in range(68):
             x, z = self.random_land(rng, margin=6)
             if self.keep_clear(x, z, 3.0):
                 continue
@@ -244,7 +244,7 @@ class World2:
             for k in range(-2, 3):
                 self.add_tree(x + math.sin(a) * k * ln / 5, z + math.cos(a) * k * ln / 5, 0.3)
         # not a blanket of snow yet -- just patches and drifts left from the last fall
-        for _ in range(780):
+        for _ in range(390):
             x, z = self.random_land(rng, margin=4, min_h=0.35)
             if math.hypot(x, z) < 4.5:
                 continue
