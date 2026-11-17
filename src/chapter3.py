@@ -684,6 +684,35 @@ def lever_box_mesh():
     return b.array()
 
 
+def shaft_mesh(depth=70.0):
+    """The elevator shaft under the upper mine: rock walls, timber braces, guide rails, cables.
+    Top at y = 0 (place it at the level's floor); open at the top."""
+    b = MeshBuilder()
+    rng = random.Random(9)
+    hw = C / 2
+    rock = (0.5, 0.46, 0.42)
+    for (ax, az), (bx, bz) in (((-hw, -hw), (hw, -hw)), ((hw, -hw), (hw, hw)), ((hw, hw), (-hw, hw)), ((-hw, hw), (-hw, -hw))):
+        y = 0.0
+        while y > -depth:
+            b.quad_world((ax, y - 3.0, az), (bx, y - 3.0, bz), (bx, y, bz), (ax, y, az), L.CONCRETE, rock, 0.4,
+                         axis='x' if ax == bx else 'z')
+            y -= 3.0
+    b.quad_world((-hw, -depth, -hw), (hw, -depth, -hw), (hw, -depth, hw), (-hw, -depth, hw), L.MUD, (0.3, 0.28, 0.26), 0.5)
+    for k in range(int(depth / 3.0)):
+        y = -1.5 - k * 3.0
+        wood = (0.6 + rng.uniform(-0.05, 0.05), 0.48, 0.34)
+        for sz in (-1, 1):
+            b.box((0, y, sz * (hw - 0.09)), (C, 0.2, 0.16), L.WOOD, wood)
+            b.box((sz * (hw - 0.09), y, 0), (0.16, 0.2, C), L.WOOD, wood)
+        if k % 4 == 1:
+            b.box((hw - 0.15, y + 0.5, 0.4), (0.1, 0.1, 0.1), L.GLOW + EMIS, (1.0, 0.6, 0.3))
+    for sx in (-1, 1):
+        b.box((sx * (hw - 0.12), -depth / 2, -hw + 0.2), (0.08, depth, 0.1), L.METAL, (0.5, 0.45, 0.4))
+    for sx in (-0.3, 0.3):
+        b.box((sx, -depth / 2, 0.0), (0.03, depth, 0.03), L.METAL, (0.35, 0.33, 0.3))
+    return b.array()
+
+
 def cart_mesh():
     """The ore cart you ride up the rail tunnel."""
     b = MeshBuilder()

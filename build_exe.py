@@ -44,8 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "The big maps are half the size they were (still bigger than the originals).",
-    "Admin menu: mark monsters, mark puzzles, and teleport to any chapter.",
+    "Cutscene fixes: a real shaft for the Ch3 elevator, a broken hole for the Ch4 fall,",
+    "and no more walking through the snow when you leave the cabin in Ch3.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

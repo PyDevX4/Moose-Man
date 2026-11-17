@@ -23,6 +23,39 @@ def sm(t, a, b):
     return k * k * (3 - 2 * k)
 
 
+def hole_mesh(depth=26.0):
+    """The hole he smashes through the sewer floor: jagged rock all the way down, bent rebar
+    at the top, chunks hanging off the sides, and a black gap in the floor seen from above."""
+    from engine import MeshBuilder, RZ
+    from textures import L
+    import random as _r
+    rng = _r.Random(44)
+    b = MeshBuilder()
+    y = 0.0
+    k = 0
+    while y > -depth:
+        seg = rng.uniform(1.6, 2.6)
+        r0 = 1.7 + rng.uniform(-0.3, 0.5) + 0.25 * k
+        r1 = 1.7 + rng.uniform(-0.3, 0.5) + 0.25 * (k + 1)
+        b.cylinder(min(r0, 3.4), min(r1, 3.4), seg, 9, L.CONCRETE, (0.42, 0.38, 0.34), m=T(0, y - seg, 0) @ RY(rng.random() * 6))
+        y -= seg
+        k += 1
+    for _ in range(26):
+        a = rng.random() * 6.28
+        rr = rng.uniform(1.4, 2.6)
+        yy = rng.uniform(-depth + 2, -0.4)
+        s = rng.uniform(0.3, 0.9)
+        b.box((math.cos(a) * rr, yy, math.sin(a) * rr), (s, s * 0.7, s), L.CONCRETE, (0.36, 0.33, 0.3),
+              m=None)
+    for _ in range(12):
+        a = rng.random() * 6.28
+        ln = rng.uniform(0.6, 1.4)
+        m = T(math.cos(a) * 1.8, -0.15, math.sin(a) * 1.8) @ RY(-a) @ RZ(rng.uniform(0.6, 1.4))
+        b.box((0, -ln / 2, 0), (0.04, ln, 0.04), L.METAL, (0.45, 0.32, 0.25), m=m)
+    b.cylinder(1.75, 1.75, 0.02, 12, L.BLACK, (0.0, 0.0, 0.0), m=T(0, 0.015, 0), cap=True)
+    return b.array()
+
+
 def look(cam, tgt):
     f = (tgt[0] - cam[0], tgt[1] - cam[1], tgt[2] - cam[2])
     ln = math.sqrt(sum(v * v for v in f)) or 1.0
@@ -47,6 +80,7 @@ class Ch4Mixin:
         self.m_gate1 = Mesh(self.ctx, prog, C4.gate_mesh(8.0, C4.GATE1_H, False))
         self.m_gate2 = Mesh(self.ctx, prog, C4.gate_mesh(12.0, C4.GATE2_H, True))
         self.m_fuse = Mesh(self.ctx, prog, C4.fuse_mesh())
+        self.m_hole4 = Mesh(self.ctx, prog, hole_mesh())
         self.m_genlamp_on = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (0.2, 1.0, 0.25)))
         self.m_genlamp_off = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (0.5, 0.04, 0.02)))
         self.m_moose['dust'] = Mesh(self.ctx, prog, unit_cube(L.CONCRETE, (0.55, 0.53, 0.5)))
@@ -267,7 +301,11 @@ class Ch4Mixin:
             parts = [self.ch4open_moose(t)] if t > 10.3 else []
             flash = 1.0 if not (21.6 < t < 21.8) else 0.1
             fpos = (cam[0] + 0.15, cam[1] - 0.15, cam[2])
-            self.draw_world(cam, fwd, flash, fpos, fwd, parts, up=up, extras=self.debris_extras())
+            extras = self.debris_extras()
+            if t > 21.5:
+                # the floor gives way: a broken hole down through the rock, not the bottom of the world
+                extras = extras + [(self.m_hole4, T(GAL_X, W.SEWER_FLOOR, GAL_Z))]
+            self.draw_world(cam, fwd, flash, fpos, fwd, parts, up=up, extras=extras)
         elif t < 26.5:
             self.r.fbo.use()
             self.r.fbo.clear(0, 0, 0, 1)

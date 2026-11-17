@@ -358,6 +358,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         self.m_cover1 = Mesh(self.ctx, prog, C3.snow_cover(W.terrain_h, -34, 34, 4, 47, 1.5, 0.35))
         self.m_lever = Mesh(self.ctx, prog, C3.lever_handle_mesh())
         self.m_cage = Mesh(self.ctx, prog, C3.cage_mesh())
+        self.m_shaft = Mesh(self.ctx, prog, C3.shaft_mesh(70.0))
         self.m_bulb = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (1.0, 0.78, 0.5)))
         # chapter 4: the deep sewer
         self.loading_screen("he is getting bigger...")
@@ -2785,7 +2786,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
                 # out into it, lantern held up, wading
                 k = sm(9.4, 13.6)
                 cam = lerp3((0.0, Y + 1.55, 3.4), (2.0, Y + 1.35, 16.0), k)
-                cam = (cam[0], cam[1] + 0.06 * math.sin(t * 7), cam[2])
+                ground = float(C2.terrain_h2(cam[0], cam[2]))
+                cam = (cam[0], max(cam[1], ground + 1.62) + 0.06 * math.sin(t * 7), cam[2])
                 fwd = look(cam, (cam[0] + 0.4, cam[1] - 0.2, cam[2] + 6))
             lp = self.held_lantern_pos(cam, math.atan2(fwd[0], fwd[2]), 0.0)
             self.draw_world2(cam, fwd, [((lp[0], lp[1] + 0.2, lp[2]), 8.0, self.lantern_col())],
@@ -3149,7 +3151,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         n = math.sqrt(sum(v * v for v in fwd))
         fwd = tuple(v / n for v in fwd)
         lp = (cx + 0.3, cage_y + 1.2, cz + 0.2)
-        self.draw_world3(lv, cam, fwd, [(lp, 6.0, self.lantern_col())], cage_y=cage_y, hold=(True, 0.0, -0.25))
+        # the shaft below the upper mine, so the drop goes past rock, not out of the bottom of the world
+        extras = [(self.m_shaft, T(cx, lv.y0, cz))] if lv is self.lv_up else []
+        self.draw_world3(lv, cam, fwd, [(lp, 6.0, self.lantern_col()), ((cx, cage_y - 3.0, cz), 8.0, (0.6, 0.4, 0.25))],
+                         cage_y=cage_y, hold=(True, 0.0, -0.25), extras=extras)
 
     # ------------------------------------------------------------------ out, and back to the drain
     def start_exit3(self):
