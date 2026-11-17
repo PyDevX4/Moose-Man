@@ -1974,15 +1974,16 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
                 self.audio.play3d('mstep', gt.x, gt.z, 40, 1.0)
             elif ev == 'roar':
                 self.audio.play3d('goat_roar', gt.x, gt.z, 90, 1.0)
-                self.audio.play('stinger', 0.6)
+                if self.mp_is_target('goat'):
+                    self.audio.play('stinger', 0.6)
             elif ev == 'lost':
                 self.audio.play3d('breath', gt.x, gt.z, 25, 0.9)
-                if 'goat_lost' not in self.flags:
+                if 'goat_lost' not in self.flags and self.mp_is_target('goat'):
                     self.flags.add('goat_lost')
                     self.message("He hunts light and movement. Lantern off. Don't move.", 5)
             elif ev == 'leave':
                 self.audio.play3d('mstep', gt.x, gt.z, 40, 0.7)
-                if 'goat_leave' not in self.flags:
+                if 'goat_leave' not in self.flags and self.mp_is_target('goat'):
                     self.flags.add('goat_leave')
                     self.message("He's going.", 3)
             elif ev == 'kill':
@@ -1999,9 +2000,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
                     self.flags.add('first_roar')
                     self.message("Something huge is moving out in the trees.", 4)
         tf = clamp(1 - d / 22, 0, 1)
-        if gt.state == 'chase':
+        mine = self.mp_is_target('goat')
+        if gt.state == 'chase' and mine:
             tf = max(tf, 0.55)
-        elif gt.state == 'search':
+        elif gt.state == 'search' and mine:
             tf = max(tf, 0.7)      # he is standing right there, staring
         self.fear += (tf - self.fear) * min(1.0, dt * 3)
         self.audio.loop3d('breath', gt.x, gt.z, 20, 1.0)
@@ -3033,13 +3035,14 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
                 self.audio.play3d('mstep', e.x, e.z, 45, 1.0)
             elif ev == 'roar':
                 self.audio.play3d('elk_bugle', e.x, e.z, 80, 1.0)
-                self.audio.play('stinger', 0.5)
+                if self.mp_is_target('elk'):
+                    self.audio.play('stinger', 0.5)
             elif ev == 'lost':
-                if 'elk_lost' not in self.flags:
+                if 'elk_lost' not in self.flags and self.mp_is_target('elk'):
                     self.flags.add('elk_lost')
                     self.message("Don't move. Don't make a light.", 4)
             elif ev == 'leave':
-                if 'elk_leave' not in self.flags:
+                if 'elk_leave' not in self.flags and self.mp_is_target('elk'):
                     self.flags.add('elk_leave')
                     self.message("It's moving on.", 3)
             elif ev == 'kill':
@@ -3047,9 +3050,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         e.events = []
         d = math.hypot(e.x - p.x, e.z - p.z)
         tf = clamp(1 - d / 24, 0, 1)
-        if e.state == 'chase':
+        mine = self.mp_is_target('elk')
+        if e.state == 'chase' and mine:
             tf = max(tf, 0.6)
-        elif e.state == 'search':
+        elif e.state == 'search' and mine:
             tf = max(tf, 0.75)
         self.fear += (tf - self.fear) * min(1.0, dt * 3)
         self.audio.loop3d('breath', e.x, e.z, 22, 1.0)
@@ -3765,14 +3769,15 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
                 self.audio.play3d('mstep', m.x, m.z, 32, 1.0)
             elif ev == 'chase_start':
                 self.audio.play3d('call_near', m.x, m.z, 50, 1.0)
-                self.audio.play('stinger', 0.6)
+                if self.mp_is_target('moose'):
+                    self.audio.play('stinger', 0.6)
             elif ev == 'kill':
                 self.mp_caught(tgt, 'moose')
         m.events = []
         d = math.hypot(m.x - p.x, m.z - p.z)
         los = d < 30 and self.world.los(m.x, m.z, p.x, p.z)
         tf = clamp(1 - d / 18, 0, 1) * (1.0 if los else 0.45)
-        if m.state == 'chase':
+        if m.state == 'chase' and self.mp_is_target('moose'):
             tf = max(tf, 0.55)
         self.fear += (tf - self.fear) * min(1.0, dt * 3)
         self.audio.loop3d('breath', m.x, m.z, 16, 1.0)

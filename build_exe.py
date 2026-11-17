@@ -44,8 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "The Beast is twice as tough.",
-    "Chapter 1 now uses the lantern, like the rest of the game.",
+    "Co-op fix: when a monster chases one player, only that player's screen panics now.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

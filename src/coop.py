@@ -173,6 +173,7 @@ class CoopMixin:
         self.mon_tgt = {}
         self.mon_freeze = {}
         self.mon_lock = {}
+        self.mon_tgt_pid = {}
         self.block_input = False
         self.coop_msg = ''
         self.coop_msg_t = 0.0
@@ -474,6 +475,7 @@ class CoopMixin:
                 obj = getattr(self, attr, None)
                 mons[attr] = None if obj is None else pack(obj)
             d['mon'] = mons
+            d['mt'] = {attr: self.mon_lock.get(attr) for attr, _ in MONSTERS.get(self.chapter, [])}
             d['mc'] = self.chapter
             d['ma'] = self.mp_area()
             if m.mev_out:
@@ -547,6 +549,7 @@ class CoopMixin:
         if 'mon' in d and frm == m.host_pid and not m.host:
             if d.get('mc') == self.chapter and d.get('ma') == self.mp_area() and self.state in PLAYISH + ('scare',):
                 self.mp_take_monsters(d['mon'])
+                self.mon_tgt_pid = d.get('mt', {})
             for k, evs in d.get('mev', {}).items():
                 self.mev_in.setdefault(k, []).extend(evs)
 
@@ -708,6 +711,14 @@ class CoopMixin:
         """For scripted monsters (dicts) that don't have an event list of their own."""
         if self.mp_on() and self.mp.host:
             self.mp.mev_out.setdefault(attr, []).append(ev)
+
+    def mp_is_target(self, attr):
+        """Is this monster after ME? Single player: always. Co-op: only if the host says so --
+        so one player being chased doesn't make everyone's screen panic."""
+        if not self.mp_on():
+            return True
+        pid = self.mon_lock.get(attr) if self.mp.host else self.mon_tgt_pid.get(attr)
+        return pid is not None and pid == self.mp.pid
 
     def mp_frozen(self, attr):
         return attr in self.mon_freeze

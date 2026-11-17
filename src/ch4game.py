@@ -596,19 +596,20 @@ class Ch4Mixin:
                 self.audio.play3d('mstep', m.x, m.z, 50, 1.0)
             elif ev == 'roar':
                 self.audio.play3d('moose_roar', m.x, m.z, 80, 1.0)
-                self.audio.play('stinger', 0.5)
+                if self.mp_is_target('moose4'):
+                    self.audio.play('stinger', 0.5)
             elif ev == 'smash':
                 fx, fz = math.sin(m.yaw), math.cos(m.yaw)
                 self.smash_sfx.append([0.55, m.x + fx * 1.6, m.z + fz * 1.6])
-                if 'm4_smash' not in self.flags:
+                if 'm4_smash' not in self.flags and self.mp_is_target('moose4'):
                     self.flags.add('m4_smash')
                     self.message("He can't get in. Stay still. Stay dark.", 4)
             elif ev == 'lost':
-                if 'm4_lost' not in self.flags:
+                if 'm4_lost' not in self.flags and self.mp_is_target('moose4'):
                     self.flags.add('m4_lost')
                     self.message("Don't move. Don't make a light.", 4)
             elif ev == 'leave':
-                if 'm4_leave' not in self.flags:
+                if 'm4_leave' not in self.flags and self.mp_is_target('moose4'):
                     self.flags.add('m4_leave')
                     self.message("He's moving on.", 3)
             elif ev == 'kill':
@@ -616,9 +617,10 @@ class Ch4Mixin:
         m.events = []
         d = math.hypot(m.x - p.x, m.z - p.z)
         tf = clamp(1 - d / 26, 0, 1)
-        if m.state == 'chase':
+        mine = self.mp_is_target('moose4')
+        if m.state == 'chase' and mine:
             tf = max(tf, 0.65)
-        elif m.state == 'search':
+        elif m.state == 'search' and mine:
             tf = max(tf, 0.75)
         self.fear += (tf - self.fear) * min(1.0, dt * 3)
         self.audio.loop3d('breath', m.x, m.z, 24, 1.0)
