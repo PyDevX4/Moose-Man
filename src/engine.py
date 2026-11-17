@@ -461,6 +461,8 @@ class Renderer:
         self.fbo = self.ctx.framebuffer([self.scene_tex], self.depth)
 
     def begin(self, cam_pos, cam_fwd, fov, env, time, flash_on, flash_pos, flash_dir, lights, far=140.0, up=(0.0, 1.0, 0.0)):
+        if getattr(self, 'fullbright', False):
+            env = dict(env, ambient=(1.05, 1.05, 1.05), mooncol=(0.0, 0.0, 0.0), fogdens=0.0)
         ctx = self.ctx
         self.fbo.use()
         ctx.viewport = (0, 0, self.rw, self.rh)

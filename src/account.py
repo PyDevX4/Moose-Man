@@ -9,6 +9,7 @@ supabase/mooseman_accounts.sql.
 browser's localStorage) and signs you straight back in next time.
 """
 import json
+import math
 import os
 import re
 import threading
@@ -144,6 +145,9 @@ class AccountMixin:
         self.delete_arm_t = 0.0
         self.settings_note = ''
         self.settings_note_t = 0.0
+        self.fullbright = self.freecam = self.noclip = False
+        self.fly_cam = [0.0, 0.0, 0.0]
+        self.fly_pos = [0.0, 0.0, 0.0]
         self.cloud_reset()
 
     def cloud_reset(self):
@@ -266,6 +270,7 @@ class AccountMixin:
         self.acct = None
         self.cloud_reset()
         self.admin_open = False
+        self.fullbright = self.freecam = self.noclip = False
         if self.mp is not None:
             self.mp_leave('')
         self.to_title()
@@ -522,11 +527,63 @@ class AccountMixin:
         self.blit_text(t, self.f_small, (130, 122, 115), (self.UW - 16, 16), 'topright')
 
     # ================================================================== admin menu (` key)
-    ADMIN_ITEMS = ['UNLOCK ALL CHAPTERS', 'CLOSE']
+    @property
+    def ADMIN_ITEMS(self):
+        on = lambda b: 'ON' if b else 'OFF'
+        return ['UNLOCK ALL CHAPTERS', 'FULLBRIGHT:  %s' % on(self.fullbright), 'FREECAM:  %s' % on(self.freecam),
+                'NOCLIP:  %s' % on(self.noclip), 'CLOSE']
 
     def admin_rows(self):
-        x0, y0 = self.UW // 2 - 190, self.UH // 2 - 50
+        x0, y0 = self.UW // 2 - 190, self.UH // 2 - 90
         return [pygame.Rect(x0, y0 + 36 + i * 32, 380, 28) for i in range(len(self.ADMIN_ITEMS))]
+
+    # ---- fly about: freecam (the view goes, you stay) and noclip (you go, through everything)
+    def admin_fly_start(self):
+        p = self.player
+        e = p.eye()
+        self.fly_cam = list(e)
+        self.fly_pos = [p.x, p.y, p.z]
+
+    def _raw_keys(self):
+        if getattr(self, 'web_keys', None) is not None:
+            return self.web_keys
+        return pygame.key.get_pressed()
+
+    def admin_fly(self, dt):
+        """WASD where you look, Space up, Ctrl/C down, Shift fast."""
+        if not (self.freecam or self.noclip) or self.state != 'play':
+            return
+        if not self.is_admin:
+            self.freecam = self.noclip = False
+            return
+        k = self._raw_keys()
+        p = self.player
+        cp = math.cos(p.pitch)
+        f = (math.sin(p.yaw) * cp, math.sin(p.pitch), math.cos(p.yaw) * cp)
+        rx, rz = -math.cos(p.yaw), math.sin(p.yaw)
+        mv = (1 if k[pygame.K_w] or k[pygame.K_UP] else 0) - (1 if k[pygame.K_s] or k[pygame.K_DOWN] else 0)
+        ms = (1 if k[pygame.K_d] or k[pygame.K_RIGHT] else 0) - (1 if k[pygame.K_a] or k[pygame.K_LEFT] else 0)
+        up = (1 if k[pygame.K_SPACE] else 0) - (1 if (k[pygame.K_LCTRL] or k[pygame.K_c]) else 0)
+        sp = 20.0 if (k[pygame.K_LSHIFT] or k[pygame.K_RSHIFT]) else 6.0
+        d = (f[0] * mv + rx * ms, f[1] * mv + up, f[2] * mv + rz * ms)
+        if self.freecam:
+            for i in range(3):
+                self.fly_cam[i] += d[i] * sp * dt
+        else:
+            for i in range(3):
+                self.fly_pos[i] += d[i] * sp * dt
+            p.vx, p.vz = d[0] * sp, d[2] * sp
+
+    def admin_fly_after(self):
+        """Noclip: wherever the chapter's own movement put you, you're where you flew."""
+        if self.noclip and not self.freecam and self.state == 'play' and self.is_admin:
+            p = self.player
+            p.x, p.y, p.z = self.fly_pos
+            p.smooth_y = p.y
+            p.bob_amt = 0.0
+
+    def fly_keys_blocked(self):
+        return (self.freecam or self.noclip) and self.state == 'play' and self.is_admin
 
     def admin_toggle(self):
         self.admin_open = not self.admin_open
@@ -563,6 +620,16 @@ class AccountMixin:
                 self.progress[k] = True
             self.save_prog()
             self.admin_msg_t = 2.5
+        elif i == 1:
+            self.fullbright = not self.fullbright
+        elif i == 2:
+            self.freecam = not self.freecam
+            if self.freecam:
+                self.admin_fly_start()
+        elif i == 3:
+            self.noclip = not self.noclip
+            if self.noclip:
+                self.admin_fly_start()
         else:
             self.admin_toggle()
 

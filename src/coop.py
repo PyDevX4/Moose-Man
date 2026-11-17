@@ -197,6 +197,8 @@ class CoopMixin:
     def keys(self):
         if self.block_input:
             return _NoKeys()
+        if self.fly_keys_blocked():
+            return _NoMoveKeys(self._raw_keys())
         if getattr(self, 'web_keys', None) is not None:
             return self.web_keys
         return pygame.key.get_pressed()
@@ -1176,3 +1178,16 @@ class CoopMixin:
 class _NoKeys:
     def __getitem__(self, k):
         return False
+
+
+_MOVE = {pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d, pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT,
+         pygame.K_LSHIFT, pygame.K_RSHIFT, pygame.K_LCTRL, pygame.K_RCTRL, pygame.K_c, pygame.K_SPACE}
+
+
+class _NoMoveKeys:
+    """While flying (freecam / noclip) the chapter's own walking code sees no movement keys."""
+    def __init__(self, real):
+        self.real = real
+
+    def __getitem__(self, k):
+        return False if k in _MOVE else self.real[k]

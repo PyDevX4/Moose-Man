@@ -82,6 +82,8 @@ class Renderer:
         self._draws = []
 
     def begin(self, cam_pos, cam_fwd, fov, env, time, flash_on, flash_pos, flash_dir, lights, far=140.0, up=(0.0, 1.0, 0.0)):
+        if getattr(self, 'fullbright', False):
+            env = dict(env, ambient=(1.05, 1.05, 1.05), mooncol=(0.0, 0.0, 0.0), fogdens=0.0)
         from engine import perspective, view_matrix
         self._flush_draws()
         h = np.zeros(HEADER + 1, np.float32)

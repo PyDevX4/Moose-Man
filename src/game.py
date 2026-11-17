@@ -3371,7 +3371,9 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             if self.intro_t > 22:
                 self.start_play()
         elif st == 'play':
+            self.admin_fly(dt)
             self.update_play(dt)
+            self.admin_fly_after()
         elif st == 'climb':
             self.update_climb(dt)
         elif st == 'cutscene':
@@ -3893,6 +3895,22 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         return p
 
     def render(self):
+        self.r.fullbright = self.fullbright and self.is_admin
+        if self.freecam and self.is_admin and self.state in PLAYISH:
+            # draw from the free camera: borrow the player's place for the frame
+            p = self.player
+            keep = (p.x, p.z, p.smooth_y, p.bob_amt)
+            p.x, p.z = self.fly_cam[0], self.fly_cam[2]
+            p.smooth_y = self.fly_cam[1] - 1.62 + 0.62 * p.crouch
+            p.bob_amt = 0.0
+            try:
+                self._render()
+            finally:
+                p.x, p.z, p.smooth_y, p.bob_amt = keep
+            return
+        self._render()
+
+    def _render(self):
         self.ui.fill((0, 0, 0, 0))
         st = self.state
         post = None
@@ -4005,6 +4023,9 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             post = self.post_params({'fear': 0.0})
         if self.admin_open:
             self.draw_admin_ui()
+        if self.is_admin and st == 'play' and (self.freecam or self.noclip or self.fullbright):
+            tags = [t for t, on in (('FREECAM', self.freecam), ('NOCLIP', self.noclip), ('FULLBRIGHT', self.fullbright)) if on]
+            self.blit_text('   '.join(tags), self.f_small, (230, 90, 70), (self.UW // 2, 8), 'midtop')
         if getattr(self, 'keypad_open', False) and self.state in PLAYISH:
             self.draw_keypad()
         if self.settings['show_fps']:

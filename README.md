@@ -199,7 +199,7 @@ Accounts live in Supabase Auth, with a `mooseman_profiles` table (username, `is_
 Set it up once with `supabase/mooseman_accounts.sql` in the Supabase SQL editor, and turn off
 *Confirm email* (Authentication -> Sign In / Providers -> Email). The game gives each username a
 made-up email that nothing is ever sent to. Admins (`is_admin = true`, set in the Table Editor)
-get a menu on the **`** key, which currently has **Unlock all chapters**.
+get a menu on the **`** key, with **Unlock all chapters**, **Fullbright**, **Freecam** and **Noclip**. While flying: WASD where you look, Space up, Ctrl/C down, Shift fast.
 
 **Your progress saves to your account** and syncs between devices, so the PC and the browser
 version share it. When you log in, the newer of the two saves wins. Saves on a device from before
