@@ -10,7 +10,7 @@
 Three kids have gone missing near these woods since August. Everyone in
 Millbrook has heard about the Moose Man. Nobody has ever filmed him.
 
-You brought a flashlight and your dad's camcorder.
+You brought the old lantern from the garage and your dad's camcorder.
 
 A first-person 3D horror game. You walk through a forest at midnight, crawl
 through a storm drain into a flooded overflow sewer, and find out what has
@@ -47,7 +47,7 @@ python src/game.py
 | Mouse | Look |
 | Shift | Run (limited stamina) |
 | Ctrl / C | Crouch (quieter, harder to see) |
-| F | Flashlight on/off |
+| F | Lantern on/off |
 | E | Read notes / interact. **Hold** to turn valves |
 | Tab | Show objective and notes found |
 | Esc | Pause |
@@ -63,7 +63,7 @@ python src/game.py
   a maze of rooms. **Search them for the key** to the gate in front of the service
   ladder.
 - Turning a valve makes noise. He hears footsteps, running, splashing, and
-  valves. He sees your flashlight from far off. With it off he can still see you
+  valves. He sees your lantern from far off. With it off he can still see you
   **moving**, from closer in. Light off and standing still, he can't see you at
   all, unless he's right on top of you. Then you run. He moves at your walking
   pace.

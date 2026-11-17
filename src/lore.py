@@ -199,13 +199,13 @@ INTRO_TEXT = [
     "",
     "Nobody has ever filmed him.",
     "",
-    "You brought a flashlight and your dad's camcorder.",
+    "You brought the old lantern from the garage and your dad's camcorder.",
     "Tonight you're going to prove he's real.",
 ]
 
 CONTROLS_TEXT = [
     "WASD - move      MOUSE - look      SHIFT - run      CTRL / C - crouch",
-    "F - flashlight      E - interact (hold to turn valves)      TAB - objective      ESC - pause",
+    "F - lantern      E - interact (hold to turn valves)      TAB - objective      ESC - pause",
 ]
 
 CH2_WAKE_LINES = [

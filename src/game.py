@@ -1077,7 +1077,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         cam = (lx, y, lz - 0.25)
         pitch = 0.25 + 0.9 * k
         fwd = (0.0, math.sin(pitch), math.cos(pitch))
-        self.draw_world(cam, fwd, 1.0, (cam[0] + 0.1, cam[1] - 0.1, cam[2]), fwd, [])
+        self.draw_world(cam, fwd, 0.0, cam, fwd, [], extra_lights=[((cam[0] + 0.3, cam[1] - 0.3, cam[2] + 0.2), 8.0,
+                                                                    self.lantern_col())])
 
     def start_escape(self):
         """Out of the manhole into the eastern woods. Route 9 is just ahead.
@@ -3828,7 +3829,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         return [o[1] for o in out[:8]]
 
     def draw_world(self, cam, fwd, flash, flash_pos, flash_dir, moose_parts_list, fov=None, up=(0.0, 1.0, 0.0),
-                   extra_lights=None, env=None, extras=(), blizzard=0.0):
+                   extra_lights=None, env=None, extras=(), blizzard=0.0, hold=None):
         r = self.r
         lights = self.gather_lights(cam[0], cam[2])
         ml = self.mp_lights()
@@ -3865,6 +3866,12 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         for parts in moose_parts_list:
             for key, M in parts:
                 r.draw(self.m_moose[key], model=M)
+        if hold and hold[0]:
+            _, yaw, pitch = hold
+            lp = self.held_lantern_pos(cam, yaw, pitch)
+            M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
+            r.draw(self.m_lantern, model=M)
+            r.draw(self.m_lantern_lit if self.flash_on else self.m_lantern_off, model=M)
 
     def post_params(self, extra=None):
         p = {'grain': 1.0 if self.settings['grain'] else 0.0, 'vhs': 1.0 if self.settings['vhs'] else 0.0,
@@ -4027,11 +4034,13 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
         p = self.player
         cam = p.eye()
         fwd = p.fwd()
-        rx, rz = -math.cos(p.yaw), math.sin(p.yaw)
-        fpos = (cam[0] + rx * 0.18, cam[1] - 0.12, cam[2] + rz * 0.18)
-        flash = 0.0
+        # the lantern, like every other chapter
+        lights = []
         if self.flash_on:
-            flash = 0.05 if self.flicker_t > 0 else 1.0
+            lp = self.held_lantern_pos(cam, p.yaw, p.pitch)
+            k = 0.15 if self.flicker_t > 0 else 1.0
+            col = self.lantern_col()
+            lights.append(((lp[0], lp[1] + 0.2, lp[2]), 13.0 if p.z < 47.5 else 11.0, (col[0] * k, col[1] * k, col[2] * k)))
         parts = []
         m = self.moose
         if m.active and not self.mp_hidden('moose'):
@@ -4052,7 +4061,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5Mixin):
                 if c['delay'] <= 0:
                     parts.append(car_parts(c['x'], c['z'], c['dir']))
             extra = self.car_lights()
-        self.draw_world(cam, fwd, flash, fpos, self.flash_dir, parts, extra_lights=extra)
+        self.draw_world(cam, fwd, 0.0, cam, fwd, parts, extra_lights=lights + (extra or []), hold=(True, p.yaw, p.pitch))
 
     def face_parts(self, cam, fwd, yaw, dist):
         # skull lifted to stare straight at you, jaw hanging open, head twitching

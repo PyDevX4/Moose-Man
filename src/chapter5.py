@@ -107,7 +107,7 @@ def pose_beast(x, z, yaw, phase=0.0, amt=0.0, slam=0.0, throw=0.0, jaw=0.3, roar
 
 # ---------------------------------------------------------------------- the beast, fighting
 class Beast:
-    MAX_HP = 320.0
+    MAX_HP = 640.0
 
     def __init__(self, x, z, yaw):
         self.x, self.z, self.yaw = x, z, yaw

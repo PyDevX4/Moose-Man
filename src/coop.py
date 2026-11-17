@@ -485,11 +485,9 @@ class CoopMixin:
         ch = self.chapter
         if ch == 2:
             return 'rifle' if self.has_rifle else 'lantern'
-        if ch == 3:
-            return 'lantern'
         if ch == 5:
             return 'shotgun' if self.has_shotgun else 'lantern'
-        return 'flash'
+        return 'lantern'
 
     def mp_recv(self, kind, d, frm):
         m = self.mp

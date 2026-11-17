@@ -44,8 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Your progress now saves to your account and syncs between the PC and the browser version.",
-    "Log in on any device and pick up where you left off: pydevx4.github.io/Moose-Man",
+    "The Beast is twice as tough.",
+    "Chapter 1 now uses the lantern, like the rest of the game.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
