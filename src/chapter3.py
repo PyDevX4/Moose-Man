@@ -18,6 +18,7 @@ from engine import MeshBuilder, T, S, RX, RY, RZ
 from textures import L, EMIS
 
 C = 2.0
+EXIT_SHAFT_TOP = 40.0     # the cage at the end of the adit goes up a shaft this tall
 ELK_KINDS = '.M'
 
 
@@ -79,6 +80,8 @@ class Level:
                     self.ceil[r, c] = self.y0 + 6.5
                 elif k == 'E':
                     self.ceil[r, c] = self.y0 + 9.0
+                elif k == 'X':
+                    self.ceil[r, c] = self.y0 + EXIT_SHAFT_TOP
                 else:
                     self.ceil[r, c] = self.y0 + 2.5
 
@@ -221,9 +224,12 @@ class Level:
                 x1, z1 = x0 + C, z0 + C
                 ce = float(self.ceil[r, c])
                 narrow = k in ',EX'
-                b.quad_world((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1),
-                             L.WOOD if k == 'E' else L.MUD, (0.75, 0.72, 0.68) if narrow else (0.62, 0.6, 0.58), 0.4)
-                b.quad_world((x0, ce, z0), (x1, ce, z0), (x1, ce, z1), (x0, ce, z1), L.CONCRETE, (0.42, 0.38, 0.34), 0.3)
+                if k != 'E':
+                    # (the elevator's floor is the cage's own, so it goes down with you)
+                    b.quad_world((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1),
+                                 L.MUD, (0.75, 0.72, 0.68) if narrow else (0.62, 0.6, 0.58), 0.4)
+                if k != 'X':
+                    b.quad_world((x0, ce, z0), (x1, ce, z0), (x1, ce, z1), (x0, ce, z1), L.CONCRETE, (0.42, 0.38, 0.34), 0.3)
                 for dc, dr, side in ((0, -1, 'S'), (0, 1, 'N'), (-1, 0, 'W'), (1, 0, 'E')):
                     nc, nr = c + dc, r + dr
                     if nr < 0 and self.has_outside:
@@ -457,6 +463,8 @@ def decorate(lv, b, seed):
             return True
         if getattr(lv, 'safe', None) and math.hypot(x - lv.safe[0], z - lv.safe[1]) < 3.0:
             return True
+        if getattr(lv, 'exit_lift', False) and abs(x - lv.center(*lv.exit)[0]) < 1.5 and z > lv.center(*lv.exit)[1] - 1.5:
+            return True
         return any(bx0 - 1.6 < x < bx1 + 1.6 and bz0 - 1.6 < z < bz1 + 1.6 for bx0, bz0, bx1, bz1 in busy)
 
     decor.dress_level(lv, b, 'mine', seed, skip=skip)
@@ -583,9 +591,13 @@ def dress_lower(lv, b):
         r += SH
         x, z = lv.center(c, r)
         lv.bulb(b, x, y0 + (1.95 if lv.kind(c, r) in ',R' else 4.0), z, float(lv.ceil[r, c]), rad=9.0)
+    # the old cage at the end of the adit, under a work light, and its call box
     ex, ez = lv.center(*lv.exit)
-    b.facing_quad((ex, y0 + 1.1, ez + C / 2 - 0.05), (0, 0, -1), 1.8, 2.2, L.GLOW + EMIS, (0.55, 0.6, 0.7))
-    lv.lights.append({'pos': (ex, y0 + 1.5, ez), 'rad': 9.0, 'col': (0.35, 0.4, 0.5), 'powered': False})
+    lv.exit_lift = True
+    xc, xr = lv.exit
+    lv.bulb(b, ex, y0 + 1.95, ez - C, float(lv.ceil[xr - 1, xc]), rad=8.0)
+    b.box((ex + 0.93, y0 + 1.3, ez - 0.5), (0.1, 0.35, 0.22), L.METAL, (0.5, 0.48, 0.45))
+    b.box((ex + 0.87, y0 + 1.36, ez - 0.5), (0.03, 0.07, 0.07), L.GLOW + EMIS, (1.0, 0.6, 0.2))
     # old crates and an ore cart
     _grown_lights(lv, b)
     for (c, r) in ((11, 8), (19, 12), (3, 17), (26, 20)):
@@ -705,7 +717,7 @@ def lever_box_mesh():
     return b.array()
 
 
-def shaft_mesh(depth=70.0):
+def shaft_mesh(depth=70.0, bottom=True):
     """The elevator shaft under the upper mine: rock walls, timber braces, guide rails, cables.
     Top at y = 0 (place it at the level's floor); open at the top."""
     b = MeshBuilder()
@@ -715,11 +727,13 @@ def shaft_mesh(depth=70.0):
     for (ax, az), (bx, bz) in (((-hw, -hw), (hw, -hw)), ((hw, -hw), (hw, hw)), ((hw, hw), (-hw, hw)), ((-hw, hw), (-hw, -hw))):
         y = 0.0
         while y > -depth:
-            b.quad_world((ax, y - 3.0, az), (bx, y - 3.0, bz), (bx, y, bz), (ax, y, az), L.CONCRETE, rock, 0.4,
+            yb = max(y - 3.0, -depth)
+            b.quad_world((ax, yb, az), (bx, yb, bz), (bx, y, bz), (ax, y, az), L.CONCRETE, rock, 0.4,
                          axis='x' if ax == bx else 'z')
             y -= 3.0
-    b.quad_world((-hw, -depth, -hw), (hw, -depth, -hw), (hw, -depth, hw), (-hw, -depth, hw), L.MUD, (0.3, 0.28, 0.26), 0.5)
-    for k in range(int(depth / 3.0)):
+    if bottom:
+        b.quad_world((-hw, -depth, -hw), (hw, -depth, -hw), (hw, -depth, hw), (-hw, -depth, hw), L.MUD, (0.3, 0.28, 0.26), 0.5)
+    for k in range(int((depth - 1.0) / 3.0)):
         y = -1.5 - k * 3.0
         wood = (0.6 + rng.uniform(-0.05, 0.05), 0.48, 0.34)
         for sz in (-1, 1):
@@ -765,7 +779,8 @@ def plank_mesh():
 def cage_mesh():
     b = MeshBuilder()
     st = (0.45, 0.42, 0.4)
-    b.box((0, 0.05, 0), (1.8, 0.1, 1.8), L.GRATE, (0.7, 0.7, 0.7))
+    b.box((0, 0.05, 0), (1.98, 0.1, 1.98), L.WOOD, (0.75, 0.72, 0.68))       # the floor: it rides with you
+    b.box((0, 0.11, 0), (1.8, 0.02, 1.8), L.GRATE, (0.7, 0.7, 0.7))
     for sx in (-0.88, 0.88):
         for sz in (-0.88, 0.88):
             b.box((sx, 1.25, sz), (0.08, 2.5, 0.08), L.METAL, st)

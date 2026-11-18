@@ -930,7 +930,7 @@ class CoopMixin:
             self.set_mouse(True)
         self.block_input = False
         fn = {'ladder': self.start_climb, 'road': self.start_cutscene, 'cabin': self.start_window_cs,
-              'elevator': self.start_ride, 'exit3': self.start_exit3, 'exit4': self.start_exit4,
+              'elevator': self.start_ride, 'exit3': self.start_elkgrab, 'exit4': self.start_exit4,
               'factory': self.start_beast_cs, 'exit5': self.start_exit5, 'butcher': self.start_butcher,
               'cart': self.start_cart, 'beastcs': self.start_beast_cs}.get(name)
         if fn:

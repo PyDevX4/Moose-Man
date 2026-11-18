@@ -44,11 +44,10 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "BACKPACK [Tab]: left hand, right hand, head and bag -- drag your things where you want them.",
-    "You start with a revolver in the bag. It can't kill them, but it stuns them and scares them off.",
-    "Rifle and shotgun take both hands; the dead hunter in Ch5 has a headlamp. Your kit carries on chapter to chapter.",
-    "Quests are on [Q] now. A new Beast transformation. The Beast has twice the health,",
-    "smashes through anything that isn't a wall, and calls the Herd up out of the floor at half health.",
+    "Chapter Three has a new ending: the Elk catches you at the mouth of the old adit.",
+    "It costs you the rifle and the revolver -- you start Chapter Four without them.",
+    "The way out of the mine is now an old cage lift going up, not a white wall.",
+    "The Ch3 elevator floor now goes down with you. The Moose Man is centred in the Ch4 opening.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

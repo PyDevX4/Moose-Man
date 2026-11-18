@@ -31,9 +31,10 @@ def elk_meshes():
 
 
 def pose_elk(x, y, z, yaw, phase=0.0, amt=0.0, jaw=0.4, split=0.5, head_pitch=0.0, head_roll=0.0, t=0.0,
-             scale=ELK_SCALE):
+             scale=ELK_SCALE, pitch=1.2, arms=None, hands=None, neck_a=0.35):
     """Always on all fours: elk hind legs, long pale human arms splayed like a spider's.
-    Returns (parts, head_matrix)."""
+    pitch < 1.2 rears it up. arms = {side: (swing, splay, elbow_out, elbow_bend)} poses an arm by hand
+    (side -1 or 1); hands, a dict, gets each palm's matrix. Returns (parts, head_matrix)."""
     p = []
     add = p.append
     M0 = T(x, y, z) @ RY(yaw) @ S(scale)
@@ -52,7 +53,6 @@ def pose_elk(x, y, z, yaw, phase=0.0, amt=0.0, jaw=0.4, split=0.5, head_pitch=0.
         for toe in (-1, 1):
             add(('black', ank @ T(toe * 0.045, -0.53, 0.06) @ RY(toe * 0.15) @ S(0.08, 0.13, 0.26)))
     # ---- torso, pitched almost flat
-    pitch = 1.2
     tor = M0 @ T(0, H, 0) @ RX(pitch)
     add(('wfur', tor @ T(0, 0.12, 0) @ S(0.62, 0.44, 0.56)))
     add(('wskin', tor @ T(0, 0.62, 0.05) @ S(0.36, 0.62, 0.3)))
@@ -78,12 +78,17 @@ def pose_elk(x, y, z, yaw, phase=0.0, amt=0.0, jaw=0.4, split=0.5, head_pitch=0.
     for side in (-1, 1):
         ph = phase + (math.pi if side < 0 else 0.0)
         sw = math.sin(ph) * 0.45 * amt
-        sh = tor @ T(side * 0.48, 1.72, 0.1) @ RX(-pitch - 0.45 - sw) @ RZ(side * 0.55)
+        a_ = (arms or {}).get(side)
+        if a_ is None:
+            a_ = (-0.45 - sw, 0.55, 0.9, -0.25 + 0.3 * amt * max(0.0, math.cos(ph)))
+        sh = tor @ T(side * 0.48, 1.72, 0.1) @ RX(-pitch + a_[0]) @ RZ(side * a_[1])
         add(('wfur', sh @ T(0, -0.2, 0) @ S(0.24, 0.42, 0.24)))
         add(('wskin', sh @ T(0, -0.68, 0) @ S(0.13, 1.36, 0.13)))
-        el = sh @ T(0, -1.36, 0) @ RZ(-side * 0.9) @ RX(-0.25 + 0.3 * amt * max(0.0, math.cos(ph)))
+        el = sh @ T(0, -1.36, 0) @ RZ(-side * a_[2]) @ RX(a_[3])
         add(('wskin', el @ T(0, -0.72, 0) @ S(0.1, 1.44, 0.1)))
         hand = el @ T(0, -1.44, 0) @ RX(0.5)
+        if hands is not None:
+            hands[side] = hand @ T(0, -0.3, 0)
         add(('wskin', hand @ T(0, -0.1, 0) @ S(0.2, 0.2, 0.07)))
         for f in (-2, -1, 0, 1, 2):
             fm = hand @ T(f * 0.045, -0.2, 0) @ RZ(f * 0.22) @ RX(-0.25)
@@ -92,7 +97,6 @@ def pose_elk(x, y, z, yaw, phase=0.0, amt=0.0, jaw=0.4, split=0.5, head_pitch=0.
             add(('wskin', j2 @ T(0, -0.13, 0) @ S(0.026, 0.26, 0.026)))
             add(('black', j2 @ T(0, -0.3, 0.008) @ S(0.022, 0.1, 0.02)))
     # ---- long neck, mane, and a row of eyes down each side
-    neck_a = 0.35
     neck = tor @ T(0, 1.95, 0.22) @ RX(neck_a)
     add(('wfur', neck @ T(0, 0.6, 0) @ S(0.34, 1.25, 0.36)))
     for i in range(10):

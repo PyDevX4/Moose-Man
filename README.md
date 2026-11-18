@@ -132,7 +132,9 @@ When you wake, something white is crawling toward it.
 - At the bottom, the rails lead into a boarded-up tunnel. Find the lever that
   powers the **minecart**, get in, and **hold W** to drive it through the boards.
 - Past them you'll find what's left of the Goat Man. Then it follows you down.
-  **Find the old way out of the mine.**
+  **Find the old way out of the mine.** There's a cage lift at the end of the
+  old adit -- but the Elk is waiting at the mouth of it, and getting past costs
+  you both guns. From Chapter Four on you have no rifle and no revolver.
 
 Checkpoints: the start of the chapter, and the bottom of the elevator.
 

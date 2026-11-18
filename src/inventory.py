@@ -35,12 +35,29 @@ SCARE_T = 7.0         # then it goes off somewhere else and forgets you
 MENUS = ('title', 'chapters', 'settings', 'update', 'coop', 'coopname', 'coopjoin', 'lobby', 'login', 'ending')
 
 
+# the Elk takes these off you at the end of Chapter Three: gone from Chapter Four on
+LOST_AFTER_CH3 = ('rifle', 'revolver')
+
+
 def default_kit(ch):
     inv = {'left': 'lantern', 'right': None, 'head': None, 'bag': [None] * BAG}
     inv['bag'][0] = 'revolver'
     if ch >= 3:
         inv['bag'][1] = 'rifle'
         inv['bag'][2] = 'knife'
+    return strip_lost(inv, ch)
+
+
+def strip_lost(inv, ch):
+    if inv is None or ch < 4:
+        return inv
+    for k in ('left', 'right', 'head'):
+        if inv[k] in LOST_AFTER_CH3:
+            inv[k] = None
+    inv['bag'] = [None if i in LOST_AFTER_CH3 else i for i in inv['bag']]
+    if inv['left'] is None and inv['right'] is None and 'lantern' in inv['bag']:
+        inv['bag'][inv['bag'].index('lantern')] = None
+        inv['left'] = 'lantern'
     return inv
 
 
@@ -126,6 +143,14 @@ class InventoryMixin:
 
     def has_light(self):
         return self.lantern_hand() is not None or self.headlamp_on()
+
+    def inv_lose(self, *items):
+        """Gone: out of your hands and your bag."""
+        inv = self._invd()
+        for k in ('left', 'right', 'head'):
+            if inv[k] in items:
+                inv[k] = None
+        inv['bag'] = [None if i in items else i for i in inv['bag']]
 
     def give(self, item, hold=False):
         """Into the bag (or straight into your hands). Returns where it went."""
@@ -325,7 +350,8 @@ class InventoryMixin:
         saved = self.progress.setdefault('inv', {})
         if cur is not None and cur == ch - 1:
             # straight on from the last chapter: you keep what you had, and that's the new start
-            snap = clean(self._invd())
+            snap = strip_lost(clean(self._invd()), ch)
+            self.__dict__['inv'] = snap
             saved[str(ch)] = snap
             try:
                 self.save_prog()
@@ -333,7 +359,7 @@ class InventoryMixin:
                 pass
         else:
             kit = clean(saved.get(str(ch)) or {}) if saved.get(str(ch)) else None
-            self.__dict__['inv'] = kit or default_kit(ch)
+            self.__dict__['inv'] = strip_lost(kit, ch) or default_kit(ch)
         self.__dict__['inv_chapter'] = ch
         self.rev_ammo = REV_ROUNDS
         self.rev_reload_t = -1.0

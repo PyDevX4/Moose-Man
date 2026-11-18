@@ -39,6 +39,7 @@ from account import AccountMixin
 from ch5puzzle import Ch5PuzzleMixin
 from inventory import InventoryMixin
 from weapons import WeaponsMixin
+from ch3escape import Ch3EscapeMixin
 import inventory as INV
 
 TITLE = "Moose Man"
@@ -226,7 +227,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin):
+class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin):
     def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -366,6 +367,7 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
         self.m_lever = Mesh(self.ctx, prog, C3.lever_handle_mesh())
         self.m_cage = Mesh(self.ctx, prog, C3.cage_mesh())
         self.m_shaft = Mesh(self.ctx, prog, C3.shaft_mesh(70.0))
+        self.m_shaft_up = Mesh(self.ctx, prog, C3.shaft_mesh(C3.EXIT_SHAFT_TOP - 2.6, bottom=False))
         self.m_bulb = Mesh(self.ctx, prog, unit_cube(L.GLOW + EMIS, (1.0, 0.78, 0.5)))
         # chapter 4: the deep sewer
         self.loading_screen("he is getting bigger...")
@@ -657,7 +659,7 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
         if st in ('coop', 'coopname', 'coopjoin', 'lobby'):
             self.coop_event(ev)
             return
-        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3',
+        if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3', 'elkgrab',
                   'ch4open', 'exit4', 'card5', 'beastcs', 'exit5'):
             return
         if st == 'play' and self.inv_event(ev):
@@ -3028,8 +3030,8 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
                     self.audio.play3d('elk_bugle', ex, ez, 90, 1.0)
                     self.message("It followed you down.", 3.5)
                     self.set_objective("Find a way out of the mine.")
-            if self.mp_gather('exit3', lv.cell_of(p.x, p.z) == lv.exit):
-                self.start_exit3()
+            if self.mp_gather('exit3', self.at_adit_mouth()):
+                self.start_elkgrab()
                 return
         if self.mp_on() and lv is self.lv_low and not self.c3_riding and not self.cart_done:
             cx, cz = self.cart_pos()
@@ -3251,7 +3253,7 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
                         r.draw(self.m_snow, model=T(ox, oy, oz))
 
     def draw_world3(self, lv, cam, fwd, lights, parts=(), extras=(), hold=None, blizzard=0.0, cage_y=None, fov=None,
-                    env_override=None):
+                    env_override=None, up=None):
         r = self.r
         all_lights = self.mp_lights() + list(lights)
         parts = list(parts) + self.mp_parts(cam, fwd)
@@ -3275,7 +3277,7 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
                    if isinstance(cave[k], tuple) else cave[k] + (bz[k] - cave[k]) * outside_t) for k in cave}
         if env_override is not None:
             env = env_override
-        r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights[:8])
+        r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights[:8], up=up or (0.0, 1.0, 0.0))
         r.draw(self.m_up if lv is self.lv_up else self.m_low)
         if self.power:
             for (x, y, z) in lv.bulbs:
@@ -3287,6 +3289,12 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
         if lv.elevator:
             cx, cz = lv.center(*lv.elevator)
             r.draw(self.m_cage, model=T(cx, lv.y0 if cage_y is None else cage_y, cz))
+        if getattr(lv, 'exit_lift', False):
+            # the old cage at the end of the adit, and its shaft up through the rock
+            ex, ez = lv.center(*lv.exit)
+            ey = getattr(lv, 'exit_cage_y', None)
+            r.draw(self.m_cage, model=T(ex, lv.y0 if ey is None else ey, ez))
+            r.draw(self.m_shaft_up, model=T(ex, lv.y0 + C3.EXIT_SHAFT_TOP, ez) @ S(0.99, 1.0, 0.99))
         if lv is self.lv_low:
             # what is left of the Goat Man
             gx, gz = lv.center(*lv.goat_cell)
@@ -3421,6 +3429,8 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
             self.update_ride(dt)
         elif st == 'exit3':
             self.update_exit3(dt)
+        elif st == 'elkgrab':
+            self.update_elkgrab(dt)
         elif st == 'ch4open':
             self.update_ch4open(dt)
         elif st == 'exit4':
@@ -4023,6 +4033,9 @@ class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, C
         elif st == 'ride':
             self.render_ride()
             post = self.post_params({'fear': 0.1})
+        elif st == 'elkgrab':
+            self.render_elkgrab()
+            post = self.elkgrab_post()
         elif st == 'exit3':
             self.render_exit3()
             post = self.post_params({'fear': 0.2})

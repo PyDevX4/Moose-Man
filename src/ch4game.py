@@ -243,7 +243,7 @@ class Ch4Mixin:
         kw = dict(hunch=0.5 + 0.25 * shift, shift=shift, t=self.time,
                   roll=rnd.uniform(-0.6, 0.6) * jit, head_yaw=rnd.uniform(-0.7, 0.7) * jit,
                   tilt=rnd.uniform(-0.12, 0.12) * jit, jaw=0.2 + 0.6 * jit + 0.5 * sm(t, 19.2, 19.6) * (1 - sm(t, 20.6, 21.0)))
-        yaw = -math.pi / 2           # facing you, back toward the west
+        yaw = math.atan2(GAL_X - x, GAL_Z - z)      # facing you, square on
         # both hands up... and down
         up = sm(t, 20.0, 21.2) * 2.35
         down = sm(t, 21.25, 21.55)
@@ -280,7 +280,9 @@ class Ch4Mixin:
                 cam = (x, fl + 1.58 + 0.04 * math.sin(t * 8.5), z)
                 fwd = look(cam, (x, fl + 1.2, z + 6.0))
             else:
-                yaw = (math.pi / 2) * sm(t, 9.6, 10.8)
+                # turn to him, and keep him in the middle of the frame
+                mx = 26.0 + (MOOSE_STOP_X - 26.0) * sm(t, 10.4, 14.6)
+                yaw = math.atan2(mx - GAL_X, 1.4) * sm(t, 9.6, 10.8)
                 pitch = -0.05 + 0.28 * sm(t, 13.6, 15.0) + 0.15 * sm(t, 20.0, 21.0) - 0.45 * sm(t, 21.3, 21.8)
                 cy = W.SEWER_FLOOR + 1.58 - 0.25 * sm(t, 14.0, 15.5)
                 if t > 22.3:
