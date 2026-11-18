@@ -756,6 +756,11 @@ class AccountMixin:
                 if not self.has_knife:
                     kx, kz = self.knife_spot()
                     out.append(((kx, C2.CABIN_Y + 0.8, kz), 'KNIFE'))
+                if self.bait_pos is None and not self.owns('bait'):
+                    out.append(((C2.BAIT_SPOT[0], C2.CABIN_Y + 0.5, C2.BAIT_SPOT[1]), 'BAIT'))
+                elif self.bait_pos is not None:
+                    bx, bz = self.bait_pos
+                    out.append(((bx, float(C2.terrain_h2(bx, bz)) + 0.4, bz), 'BAIT'))
                 if ph == 'hunt' and self.deer is not None:
                     out.append(((self.deer.x, self.deer.y + 1.2, self.deer.z), 'DEER'))
             elif ph == 'run':

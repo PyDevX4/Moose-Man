@@ -191,6 +191,9 @@ class ExtrasMixin:
         # chapter 2
         self.fire_lit = False
         self.has_knife = False
+        self.bait_pos = None          # where the corn is on the snow
+        self.bait_t = None            # seconds until a deer comes for it
+        self.bait_left = 1.0
         # chapter 3
         self.cart_power = False
         self.c3_riding = False
@@ -364,7 +367,73 @@ class ExtrasMixin:
         kx, kz = self.knife_spot()
         if ph in ('rifle', 'hunt') and not self.has_knife and math.hypot(p.x - kx, p.z - kz) < 1.5:
             return ('knife', 0)
+        bx, bz = C2.BAIT_SPOT
+        if ph in ('rifle', 'hunt') and self.bait_pos is None and not self.owns('bait') \
+                and math.hypot(p.x - bx, p.z - bz) < 1.4:
+            return ('baitsack', 0)
+        inside = abs(p.x) < C2.CABIN_HX and abs(p.z) < C2.CABIN_HZ
+        if ph == 'hunt' and self.bait_pos is None and self.holding('bait') and not inside                 and math.hypot(p.x, p.z - C2.CABIN_HZ) > 2.0:
+            return ('baitdrop', 0)
         return None
+
+    def bait_drop_spot(self):
+        """Where the corn goes: just in front of your feet."""
+        p = self.player
+        f = p.fwd()
+        n = math.hypot(f[0], f[2]) or 1.0
+        return p.x + f[0] / n * 1.1, p.z + f[2] / n * 1.1
+
+    def bait_drop_ok(self):
+        x, z = self.bait_drop_spot()
+        if abs(x) < C2.CABIN_HX + 0.6 and abs(z) < C2.CABIN_HZ + 1.0:
+            return "Too close to the cabin."
+        if float(C2.terrain_h2(x, z)) < C2.WL + 0.2:
+            return "Not in the water."
+        return None
+
+    def take_bait(self):
+        self.give('bait')
+        self.audio.play('wood_pick', 0.6)
+        self.message("A sack of feed corn. In your backpack. [Tab] to hold it.", 4)
+        self.check_armed()
+
+    def drop_bait(self):
+        why = self.bait_drop_ok()
+        if why:
+            self.message(why, 2.5)
+            return
+        x, z = self.bait_drop_spot()
+        self.take_item('bait')
+        self.mp_act('bait', x=round(x, 2), z=round(z, 2))
+
+    def act_bait(self, a, frm):
+        if self.bait_pos is not None or self.ch2_phase != 'hunt':
+            return
+        self.bait_pos = (a['x'], a['z'])
+        self.bait_t = max(0.0, random.uniform(*C2.BAIT_DELAY) - C2.BAIT_WALK)
+        self.bait_left = 1.0
+        self.audio.play('paper', 0.8)
+        self.message(("You pour the corn out on the snow. Now back off, keep low, and wait." if frm is None else
+                      "%s put the bait out." % self.who(frm)), 5)
+        self.set_objective("Wait for a deer to come to the bait. Keep your distance and your lantern low.  "
+                           "[Right mouse] aim  [Left mouse] fire")
+
+    def update_bait(self, dt):
+        """The corn on the snow: a deer walks in and is eating it 15-60 s after it goes down."""
+        if self.bait_pos is None:
+            return
+        dr = self.deer
+        if dr is None:
+            if self.bait_t is not None and self.mp_sim():
+                self.bait_t -= dt
+                if self.bait_t <= 0:
+                    self.bait_t = None
+                    p = self.player
+                    self.deer = C2.Deer(self.w2, random.Random(), bait=self.bait_pos, away=(p.x, p.z))
+            return
+        bx, bz = self.bait_pos
+        if dr.state == 'graze' and math.hypot(dr.x - bx, dr.z - bz) < 1.6:
+            self.bait_left = max(0.3, self.bait_left - dt / 90.0)
 
     def act_stove(self, a, frm):
         if self.fire_lit:
@@ -374,7 +443,7 @@ class ExtrasMixin:
         self.audio.play('match', 0.9)
         self.message(("The kindling catches. The stove roars." if frm is None else
                       "%s got the stove going." % self.who(frm)), 4)
-        self.set_objective("Take the rifle from the rack and the knife from the table.")
+        self.set_objective("Take the rifle from the rack, the knife from the table and the bait by the door.")
 
     def take_knife(self):
         self.has_knife = True
@@ -383,22 +452,24 @@ class ExtrasMixin:
         self.check_armed()
 
     def check_armed(self):
-        if self.has_rifle and self.has_knife and self.ch2_phase == 'rifle':
+        if self.ch2_phase != 'rifle':
+            return
+        need = [w for w, have in (("the rifle from the rack", self.has_rifle),
+                                  ("the knife from the table", self.has_knife),
+                                  ("the bait by the door", self.owns('bait'))) if not have]
+        if not need:
             self.mp_act('armed')
-        elif self.has_rifle and not self.has_knife:
-            self.set_objective("Take the knife from the table too.")
-        elif self.has_knife and not self.has_rifle:
-            self.set_objective("Take the rifle from the rack too.")
+        else:
+            self.set_objective("Take %s too." % (need[0] if len(need) == 1 else ", ".join(need[:-1]) + " and " + need[-1]))
 
     def act_armed(self, a, frm):
         if self.ch2_phase != 'rifle':
             return
         self.ch2_phase = 'hunt'
-        self.deer = C2.Deer(self.w2, random.Random())
         if frm is not None:
             self.message("%s is ready to hunt. Take a rifle and a knife." % self.who(frm), 4)
-        self.set_objective("Hunt a deer. One's been grazing straight out in front of the cabin.  "
-                           "[Right mouse] aim  [Left mouse] fire")
+        self.set_objective("Pick a spot outside and put the bait down: hold it ([Tab]) and press [E]. "
+                           "A deer will come to it.")
 
     def stove_lights(self):
         if self.chapter != 2 or not self.fire_lit:

@@ -24,6 +24,7 @@ ITEMS = {
     'lantern': {'name': "LANTERN", 'hands': 1, 'desc': "Light. [F] turns it on and off."},
     'revolver': {'name': "REVOLVER", 'hands': 1, 'desc': "Six shots. It won't kill them -- it scares them off."},
     'knife': {'name': "KNIFE", 'hands': 1, 'desc': "For butchering."},
+    'bait': {'name': "DEER BAIT", 'hands': 1, 'desc': "A sack of corn. Hold it, and [E] pours it out on the snow."},
     'rifle': {'name': "HUNTING RIFLE", 'hands': 2, 'desc': "Two hands. [Right mouse] to look down the scope."},
     'shotgun': {'name': "SHOTGUN", 'hands': 2, 'desc': "Two hands. Six shells. [R] reloads."},
     'headlamp': {'name': "HEADLAMP", 'hands': 0, 'head': True, 'desc': "Wear it. Light, and both hands free."},
@@ -37,7 +38,7 @@ MENUS = ('title', 'chapters', 'settings', 'update', 'coop', 'coopname', 'coopjoi
 
 # what you no longer have from a chapter on: the knife stays by the deer in Chapter Two,
 # and the Elk takes both guns at the end of Chapter Three
-LOST_FROM = {3: ('knife',), 4: ('knife', 'rifle', 'revolver')}
+LOST_FROM = {3: ('knife', 'bait'), 4: ('knife', 'bait', 'rifle', 'revolver')}
 
 
 def default_kit(ch):
@@ -553,6 +554,12 @@ class InventoryMixin:
             pygame.draw.line(ui, (70, 70, 76), P(-34, 0), P(34, -6), max(4, int(6 * s)))
             pygame.draw.polygon(ui, (110, 70, 40), [P(-34, -3), P(-12, -5), P(-10, 6), P(-36, 12)])
             pygame.draw.rect(ui, (110, 70, 40), (*P(4, -6), int(14 * s), int(8 * s)))
+        elif it == 'bait':
+            pygame.draw.polygon(ui, (170, 140, 95), [P(-16, -8), P(16, -8), P(20, 22), P(-20, 22)])
+            pygame.draw.polygon(ui, (150, 120, 80), [P(-8, -8), P(8, -8), P(4, -18), P(-4, -18)])
+            pygame.draw.line(ui, (90, 65, 40), P(-9, -10), P(9, -10), max(2, int(2 * s)))
+            for k in range(5):
+                pygame.draw.circle(ui, (230, 190, 70), P(-12 + k * 6, 26), max(2, int(3 * s)))
         elif it == 'knife':
             pygame.draw.polygon(ui, (200, 200, 205), [P(-4, -26), P(4, -20), P(3, 6), P(-3, 6)])
             pygame.draw.rect(ui, (80, 50, 30), (*P(-4, 6), int(8 * s), int(18 * s)))
@@ -590,6 +597,9 @@ class InventoryMixin:
                 r.draw(self.m_revolver, model=M)
                 if getattr(self, 'muzzle_t', 0) > 0 and getattr(self, 'muzzle_gun', '') == 'revolver':
                     r.draw(self.m_flash, model=M @ T(0, 0.08, 0.3) @ S(0.5))
+            elif it == 'bait':
+                p = self.held_pos(cam, yaw, pitch, side, 0.42, 0.25)
+                r.draw(self.m_bait_sack, model=T(p[0], p[1] - 0.25, p[2]) @ RY(yaw) @ S(0.8))
             elif it == 'knife':
                 p = self.held_pos(cam, yaw, pitch, side, 0.42, 0.25)
                 r.draw(self.m_knife, model=T(*p) @ RY(yaw) @ RX(-pitch + 1.2) @ RZ(0.3 * side))

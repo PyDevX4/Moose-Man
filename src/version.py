@@ -6,7 +6,7 @@ Bump this before building a release (or let `build_exe.py --bump` do it).
 `updater.py` compares it against whatever the manifest says is current.
 """
 
-VERSION = "1.13.2"
+VERSION = "1.14.0"
 
 
 def parse(text):

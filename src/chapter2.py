@@ -77,6 +77,9 @@ CABIN_Y = float(terrain_h2(0.0, 0.0))
 WINDOW_Z = -0.2                          # the window in the left (west) wall
 WINDOW_Y = CABIN_Y + 1.36
 RIFLE_POS = (-0.7, CABIN_Y + 1.55)       # x, y on the back wall rack
+BAIT_SPOT = (1.75, 1.3)                  # the sack of corn, inside by the door
+BAIT_DELAY = (15.0, 60.0)                # seconds after the bait goes down until a deer is eating it
+BAIT_WALK = 16.0                         # of which this long is the deer walking in to it
 
 
 class World2:
@@ -543,6 +546,32 @@ def knife_mesh():
     return b.array()
 
 
+def bait_sack_mesh():
+    """A burlap sack of feed corn, tied at the top. Sits on the floor."""
+    b = MeshBuilder()
+    tan = (0.78, 0.64, 0.44)
+    b.box((0, 0.17, 0), (0.36, 0.34, 0.26), L.FUR, tan)
+    b.box((0, 0.36, 0), (0.28, 0.06, 0.2), L.FUR, tan)
+    b.box((0, 0.42, 0), (0.1, 0.08, 0.08), L.FUR, (0.7, 0.56, 0.38))
+    b.box((0, 0.395, 0), (0.12, 0.02, 0.1), L.WOOD, (0.4, 0.3, 0.2))    # the twine
+    return b.array()
+
+
+def bait_pile_mesh(seed=3):
+    """Corn poured out on the snow: a low mound of kernels."""
+    import random as _r
+    rng = _r.Random(seed)
+    b = MeshBuilder()
+    b.box((0, 0.03, 0), (0.75, 0.06, 0.6), L.WOOD, (0.95, 0.75, 0.3))
+    for _ in range(60):
+        a = rng.random() * 6.28
+        d = rng.random() ** 0.6 * 0.55
+        s = rng.uniform(0.025, 0.045)
+        b.box((math.cos(a) * d, 0.05 + rng.random() * 0.06 * (1 - d), math.sin(a) * d * 0.85), (s, s * 0.7, s),
+              L.WOOD, (1.0, rng.uniform(0.7, 0.85), 0.25))
+    return b.array()
+
+
 def meat_mesh():
     b = MeshBuilder()
     b.box((0, 0, 0), (0.26, 0.09, 0.18), L.SKIN, (0.62, 0.12, 0.1))
@@ -594,23 +623,42 @@ def pose_deer(x, y, z, yaw, phase=0.0, amt=0.0, graze=0.0, lie=0.0, alert=0.0):
 class Deer:
     """Grazes near the lake. Spooks at your lantern, at running, and at a missed shot."""
 
-    def __init__(self, w, rng):
+    def __init__(self, w, rng, bait=None, away=None):
         self.w = w
         self.rng = rng
-        # out in front of the cabin, about 200 feet (61 m) straight out from the porch
-        x, z = 0.0, CABIN_HZ + 61.0
-        for _ in range(300):
-            cx_, cz_ = rng.uniform(-6.0, 6.0), CABIN_HZ + rng.uniform(58.0, 64.0)
-            if float(terrain_h2(cx_, cz_)) > WL + 0.5 and not w.near_tree(cx_, cz_, 2.0):
-                x, z = cx_, cz_
-                break
-        self.home = (x, z)
+        self.bait = tuple(bait) if bait else None
+        if self.bait:
+            # it comes in out of the trees, 32-40 m off, from the side away from you if it can
+            bx, bz = self.bait
+            base = math.atan2(bx - away[0], bz - away[1]) if away else rng.random() * 6.28
+            x, z = bx, bz + 50.0
+            for k in range(400):
+                a = base + rng.uniform(-1.2, 1.2) * (1 + k / 100.0)
+                r = rng.uniform(32.0, 40.0)
+                cx_, cz_ = bx + math.sin(a) * r, bz + math.cos(a) * r
+                if abs(cx_) < 150 and abs(cz_) < 150 and float(terrain_h2(cx_, cz_)) > WL + 0.5 \
+                        and not w.near_tree(cx_, cz_, 1.5):
+                    x, z = cx_, cz_
+                    break
+        else:
+            # out in front of the cabin, about 200 feet (61 m) straight out from the porch
+            x, z = 0.0, CABIN_HZ + 61.0
+            for _ in range(300):
+                cx_, cz_ = rng.uniform(-6.0, 6.0), CABIN_HZ + rng.uniform(58.0, 64.0)
+                if float(terrain_h2(cx_, cz_)) > WL + 0.5 and not w.near_tree(cx_, cz_, 2.0):
+                    x, z = cx_, cz_
+                    break
+        self.home = self.bait or (x, z)
         self.x, self.z = x, z
         self.y = float(terrain_h2(x, z))
         self.yaw = rng.random() * 6.28
         self.state = 'graze'
         self.timer = rng.uniform(3, 6)
         self.target = None
+        if self.bait:
+            self.state = 'walk'             # heading for the corn
+            self.target = self.bait
+            self.yaw = math.atan2(self.bait[0] - x, self.bait[1] - z)
         self.phase = 0.0
         self.amt = 0.0
         self.graze = 1.0
@@ -646,7 +694,7 @@ class Deer:
             return
         if st == 'dead':
             return
-        if st in ('graze', 'walk'):
+        if st in ('graze', 'walk', 'wary'):
             sense = 16.0 if lantern_on else 9.0
             if player.crouch > 0.5:
                 sense *= 0.6
@@ -661,11 +709,12 @@ class Deer:
             self.timer -= dt
             if self.timer <= 0:
                 a = self.rng.random() * 6.28
-                r = self.rng.uniform(3, 10)
+                r = self.rng.uniform(0.3, 0.9) if self.bait else self.rng.uniform(3, 10)
                 self.target = (self.home[0] + math.cos(a) * r, self.home[1] + math.sin(a) * r)
                 self.state = 'walk'
         elif st == 'walk':
-            speed = 1.0
+            far = self.bait and math.hypot(self.x - self.bait[0], self.z - self.bait[1]) > 4.0
+            speed = 2.2 if far else 1.0
             self.graze += (0.0 - self.graze) * min(1.0, dt * 3)
         elif st == 'flee':
             speed = 7.5
@@ -673,10 +722,21 @@ class Deer:
             self.alert = 1.0
             self.timer -= dt
             if self.timer <= 0:
-                self.state = 'graze'
-                self.home = (self.x, self.z)
-                self.timer = self.rng.uniform(4, 8)
                 self.alert = 0.0
+                if self.bait:
+                    # it settles down and, after a while, comes back for the corn
+                    self.state = 'wary'
+                    self.timer = self.rng.uniform(8, 16)
+                else:
+                    self.state = 'graze'
+                    self.home = (self.x, self.z)
+                    self.timer = self.rng.uniform(4, 8)
+        elif st == 'wary':
+            self.graze += (1.0 - self.graze) * min(1.0, dt * 2)
+            self.timer -= dt
+            if self.timer <= 0:
+                self.state = 'walk'
+                self.target = self.bait
         moved = 0.0
         if self.target and speed > 0:
             tx, tz = self.target
@@ -684,8 +744,11 @@ class Deer:
             md = math.hypot(mx, mz)
             if md < 0.5:
                 if st == 'walk':
+                    if self.bait and math.hypot(self.x - self.bait[0], self.z - self.bait[1]) < 1.2 \
+                            and self.target == self.bait:
+                        self.events.append('snort')         # it's found the corn
                     self.state = 'graze'
-                    self.timer = self.rng.uniform(4, 9)
+                    self.timer = self.rng.uniform(6, 12) if self.bait else self.rng.uniform(4, 9)
             else:
                 nx, nz = self.w.collide(self.x + mx / md * speed * dt, self.z + mz / md * speed * dt, 0.45, self.x, self.z)
                 moved = math.hypot(nx - self.x, nz - self.z)

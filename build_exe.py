@@ -44,8 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Real recorded sounds: footsteps in the forest, in snow and on wooden floors (each step a little different),",
-    "the lantern and headlamp switching on and off, and new revolver and rifle shots.",
+    "Chapter 2: take the sack of corn by the cabin door and pour it out anywhere outside.",
+    "15 to 60 seconds later a deer comes to eat it. You pick where the shot is.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

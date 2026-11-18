@@ -342,6 +342,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.m_bars = Mesh(self.ctx, prog, C2.window_bars_mesh())
         self.m_rifle = Mesh(self.ctx, prog, C2.rifle_mesh())
         self.m_knife = Mesh(self.ctx, prog, C2.knife_mesh())
+        self.m_bait_sack = Mesh(self.ctx, prog, C2.bait_sack_mesh())
+        self.m_bait_pile = Mesh(self.ctx, prog, C2.bait_pile_mesh())
         self.m_revolver = Mesh(self.ctx, prog, INV.revolver_mesh())
         self.m_headlamp = Mesh(self.ctx, prog, INV.headlamp_mesh())
         self.m_meat = Mesh(self.ctx, prog, C2.meat_mesh())
@@ -1969,6 +1971,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 self.audio.play('bolt', 0.6)
         if self.ch2_goat_phase():
             self.update_goat(dt)
+        if self.ch2_phase == 'hunt':
+            self.update_bait(dt)
         if self.ch2_phase == 'hunt' and self.deer is not None:
             tgt, lit = self.mp_ai_target(self.deer, 'deer')
             if self.mp_sim():
@@ -2092,6 +2096,12 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         if kind == 'knife':
             self.take_knife()
             return
+        if kind == 'baitsack':
+            self.take_bait()
+            return
+        if kind == 'baitdrop':
+            self.drop_bait()
+            return
         if kind == 'wood':
             self.wood_taken.add(key)
             self.mp_tell('wood', i=key)
@@ -2132,6 +2142,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.ch2_phase = 'fire'
         self.message("That's enough wood. Get the stove going before you freeze.", 5)
         self.set_objective("Go inside and light the stove.  [E] opens the door")
+        self.bait_pos = None
+        self.bait_t = None
+        self.bait_left = 1.0
         self.set_resume(2, 'wood20')        # Chapter Two checkpoint: the woodpile is full
 
     def fire_rifle(self):
@@ -2624,6 +2637,14 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         if not self.has_knife and self.ch2_phase in ('wood', 'fire', 'rifle', 'hunt'):
             kx, kz = self.knife_spot()
             r.draw(self.m_knife, model=T(kx, C2.CABIN_Y + 0.8, kz) @ RY(1.3) @ RZ(math.pi / 2))
+        if self.ch2_phase in ('wood', 'fire', 'rifle', 'hunt') and getattr(self, 'bait_pos', None) is None \
+                and not self.owns('bait'):
+            bx, bz = C2.BAIT_SPOT
+            r.draw(self.m_bait_sack, model=T(bx, C2.CABIN_Y + 0.04, bz) @ RY(0.4))
+        if self.ch2_phase in ('hunt', 'butcher') and getattr(self, 'bait_pos', None) is not None:
+            bx, bz = self.bait_pos
+            k = self.bait_left
+            r.draw(self.m_bait_pile, model=T(bx, float(C2.terrain_h2(bx, bz)) - 0.02, bz) @ S(k, 0.4 + 0.6 * k, k))
         for mesh, M in extras:
             r.draw(mesh, model=M)
         for i, (wx, wy, wz, rot) in enumerate(w2.wood_spots):
@@ -4398,6 +4419,11 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 label = "[E] Light the stove"
             elif kind == 'knife':
                 label = "[E] Take the knife"
+            elif kind == 'baitsack':
+                label = "[E] Take the sack of corn (deer bait)"
+            elif kind == 'baitdrop':
+                why = self.bait_drop_ok()
+                label = why if why else "[E] Pour the bait out here"
             elif kind == 'cart':
                 label = "[E] Get in the minecart" if self.cart_power else "The minecart (no power)"
             else:
@@ -4434,8 +4460,14 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             elif self.ch2_phase == 'fire':
                 status = "FIREWOOD  stacked %d/%d   -   light the stove" % (self.stacked, C2.WOOD_NEEDED)
             elif self.ch2_phase == 'rifle':
-                status = "THE RIFLE %s    THE KNIFE %s" % ('- got it' if self.has_rifle else '- on the rack',
-                                                         '- got it' if self.has_knife else '- on the table')
+                status = "THE RIFLE %s    THE KNIFE %s    THE BAIT %s" % (
+                    '- got it' if self.has_rifle else '- on the rack',
+                    '- got it' if self.has_knife else '- on the table',
+                    '- got it' if self.owns('bait') else '- by the door')
+            elif self.ch2_phase == 'hunt' and self.bait_pos is None:
+                status = "BAIT   hold it [Tab], then [E] to pour it out anywhere outside"
+            elif self.ch2_phase == 'hunt' and self.deer is None:
+                status = "BAIT IS OUT   wait for a deer   [right mouse] aim   [left mouse] fire"
             elif self.ch2_phase == 'hunt':
                 status = "RIFLE   [right mouse] aim   [left mouse] fire"
             else:

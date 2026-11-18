@@ -993,9 +993,9 @@ class CoopMixin:
         if self.ch2_phase != 'rifle':
             return
         self.ch2_phase = 'hunt'
-        self.deer = C2.Deer(self.w2, random.Random())
         self.message("%s took a rifle down. There's another on the rack." % self.who(frm), 4)
-        self.set_objective("Hunt a deer. One's been grazing straight out in front of the cabin.  [Right mouse] aim  [Left mouse] fire")
+        self.set_objective("Pick a spot outside and put the bait down: hold it ([Tab]) and press [E]. "
+                           "A deer will come to it.")
 
     def act_deer_shot(self, a, frm):
         if self.mp_sim() and self.deer is not None:

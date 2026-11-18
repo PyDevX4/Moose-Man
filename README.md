@@ -108,10 +108,12 @@ snowstorm is coming. Take the lantern and go out for firewood.
 - If he catches you, you wake on the porch. **Whatever you were carrying is
   lost** (it goes back where you found it). The woodpile keeps what you stacked.
 - With 20 stacked, go inside and **light the stove**. Then take the **rifle**
-  from the rack and the **knife** from the table. The Goat Man is still out there
-  until you start butchering, and a rifle hit **stuns** him for a second. Hunt the
-  deer grazing about 200 feet straight out in front of the cabin: **right mouse** aims through the scope, **left mouse**
-  fires. Your lantern and your running will spook it.
+  from the rack, the **knife** from the table and the **sack of corn** by the door.
+  The Goat Man is still out there until you start butchering, and a rifle hit
+  **stuns** him for a second. Hold the corn (**Tab**) and press **E** to pour it out
+  anywhere outside. **15 to 60 seconds** later a deer walks in to eat it:
+  **right mouse** aims through the scope, **left mouse** fires. Your lantern and
+  your running will spook it. If it bolts, it comes back for the corn after a while.
 - Butcher it, then **get back to the cabin**. Something followed you.
 
 ## Chapter Three
