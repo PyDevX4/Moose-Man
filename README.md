@@ -83,7 +83,8 @@ bag slots. Drag things between them (or tap one, then tap where it goes).
 - Past the gate is a long tunnel, and then a **drop shaft**: a huge room with
   water pouring down into it from pipes on every side. A catwalk crosses it high
   up, but its middle has fallen in. Find the **long plank** (it's somewhere in
-  the sewer rooms, and you can't run while you carry it), lay it over the gap,
+  the rooms past the drained chamber, like the key, and you can't run while you
+  carry it), lay it over the gap,
   and walk across it **slowly**. Keep your balance with **A** and **D**: tip too
   far and you fall. The ladder up is on the far side.
 - Turning a valve makes noise. He hears footsteps, running, splashing, and
