@@ -74,7 +74,7 @@ bag slots. Drag things between them (or tap one, then tap where it goes).
 
 - Follow the trail north to the creek and the storm drain. A **flood grate** is
   locked over it: find the **two release levers** out in the woods (look for the
-  red lamps) and pull them (hold **E**) to raise it.
+  red lamps) and pull them (**E**) to raise it.
 - The drain leads down into Overflow System C. **He is down there.**
 - Chamber C is flooded. Open the **five relief valves** hidden around the
   system to drain it. Past the drained chamber are the old works, a hall and
@@ -127,7 +127,7 @@ When you wake, something white is crawling toward it.
   stand still**. But it is **slower than you**, and it **can't fit into the
   narrow timbered mineshafts**. Get into one and it can only wait at the
   opening, staring in, until it gives up.
-- Find and pull **four levers** in the caverns (hold **E**). Pulling one is
+- Find and pull **four levers** in the caverns (**E**). Pulling one is
   loud, and it will come.
 - With all three pulled, the generator starts and the lights come on. Take the
   **elevator** down from beside the mine office.
@@ -176,7 +176,7 @@ in co-op.
 - **The steel door** has a 4-digit keypad. Four scraps of paper are hidden in the
   small rooms around it, each with one digit (`_ _ 7 _`). Type or tap the code in.
 - **The machine floor** behind it is big. Two huge machines each need **two
-  switches** thrown (hold **E**), and the four switches are hidden around the
+  switches** thrown (**E**), and the four switches are hidden around the
   floor. With both machines running, the **huge door** into the main hall lifts.
 - **The hall is pitch black.** The key to the **admin booth** in the corner is on
   one of the shelves round the walls. In the booth there's a button.

@@ -1006,7 +1006,27 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 best = (kind, key)
         return best
 
+    def pull_lever_press(self):
+        """[E] on a lever throws it in one go."""
+        if not self.focus:
+            return False
+        kind, i = self.focus
+        if kind == 'c1lever' and self.chapter == 1 and not self.world.c1_levers[i]['pulled']:
+            self.mp_act('c1lever', i=i)
+        elif kind == 'lever' and self.chapter == 3 and self.lv is not None and not self.lv.levers[i]['pulled']:
+            lev = self.lv.levers[i]
+            if self.elk:
+                self.elk.hear(lev['pos'][0], lev['pos'][2], 30.0)      # the clang carries
+            self.mp_act('lever', i=i, low=self.lv is self.lv_low)
+        elif kind == 'switch5' and self.chapter == 5 and not self.c5_switches[i]['on']:
+            self.mp_act('switch5', i=i)
+        else:
+            return False
+        return True
+
     def interact_press(self):
+        if self.pull_lever_press():
+            return
         if self.chapter == 2:
             self.interact_ch2()
             return
@@ -3025,25 +3045,11 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.audio.loop('sewer_amb', 0.25 if near_mouth else 0.55)
         self.audio.loop('forest_amb', 0.0)
         self.audio.loop('title_amb', 0.0)
-        # levers
-        turning = False
-        for i, lev in enumerate(lv.levers):
+        # levers: one press throws them (pull_lever_press); here they swing down
+        for lev in lv.levers:
             if lev['pulled']:
                 lev['angle'] += (2.371 - lev['angle']) * min(1.0, dt * 8)
-                continue
-            if self.focus == ('lever', i) and keys[pygame.K_e]:
-                turning = True
-                lev['progress'] += dt / 1.6
-                lev['angle'] = 0.8 + 1.571 * min(1.0, lev['progress'])
-                self.lever_noise_t = getattr(self, 'lever_noise_t', 0.0) - dt
-                if self.lever_noise_t <= 0:
-                    self.lever_noise_t = 0.5
-                    if self.elk:
-                        self.elk.hear(lev['pos'][0], lev['pos'][2], 30.0)
-                if lev['progress'] >= 1.0:
-                    self.mp_act('lever', i=i, low=lv is self.lv_low)
-                    turning = False
-        self.audio.loop('creak', 0.6 if turning else 0.0)
+        self.audio.loop('creak', 0.0)
         # the lower mine: what's left of the Goat Man, and then the Elk
         if lv is self.lv_low:
             gx, gz = lv.center(*lv.goat_cell)
@@ -4383,7 +4389,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 label = "[E] Butcher the deer"
             elif kind == 'lever':
                 lev = self.lv.levers[key]
-                label = "[Hold E] Pull the lever"
+                label = "[E] Pull the lever"
                 if lev['progress'] > 0:
                     w = 160
                     pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))

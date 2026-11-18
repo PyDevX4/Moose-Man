@@ -237,7 +237,7 @@ class Ch5PuzzleMixin:
             return "[E] Keypad", 0.0
         if kind == 'switch5':
             s = self.c5_switches[key]
-            return "[Hold E] Throw the switch  (machine %d)" % (s['machine'] + 1), s['progress']
+            return "[E] Throw the switch  (machine %d)" % (s['machine'] + 1), s['progress']
         if kind == 'key5':
             return "[E] Take the key", 0.0
         if kind == 'booth5':
@@ -332,21 +332,10 @@ class Ch5PuzzleMixin:
             self.shake = max(getattr(self, 'shake', 0.0), 0.15)
         if self.booth5_opening and w.booth_open < 1.0:
             w.booth_open = min(1.0, w.booth_open + dt / 1.2)
-        pulling = False
-        for i, s in enumerate(self.c5_switches):
+        # switches: one press throws them (pull_lever_press); here they swing down
+        for s in self.c5_switches:
             if s['on']:
                 s['angle'] += (2.371 - s['angle']) * min(1.0, dt * 8)
-                continue
-            if self.focus == ('switch5', i) and keys[pygame.K_e]:
-                pulling = True
-                s['progress'] += dt / 1.2
-                s['angle'] = 0.8 + 1.571 * min(1.0, s['progress'])
-                if s['progress'] >= 1.0:
-                    self.mp_act('switch5', i=i)
-            elif s['progress'] > 0:
-                s['progress'] = max(0.0, s['progress'] - dt)
-                s['angle'] = 0.8 + 1.571 * s['progress']
-        self.audio.loop('creak', 0.5 if pulling else 0.0)
         # first time into the hall: dark, and very quiet
         p = self.player
         if w.region(p.x, p.z) == 'hall' and 'hall5' not in self.flags:

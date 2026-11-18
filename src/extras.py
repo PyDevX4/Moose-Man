@@ -219,22 +219,10 @@ class ExtrasMixin:
     def update_c1_extras(self, dt, keys):
         w = self.world
         p = self.player
-        pulling = False
-        for i, lev in enumerate(w.c1_levers):
+        # levers: one press throws them (pull_lever_press); here they swing down
+        for lev in w.c1_levers:
             if lev['pulled']:
                 lev['angle'] += (2.371 - lev['angle']) * min(1.0, dt * 8)
-                continue
-            if self.focus == ('c1lever', i) and keys[pygame.K_e]:
-                pulling = True
-                lev['progress'] += dt / 1.6
-                lev['angle'] = 0.8 + 1.571 * min(1.0, lev['progress'])
-                if lev['progress'] >= 1.0:
-                    self.mp_act('c1lever', i=i)
-            elif lev['progress'] > 0 and self.focus != ('c1lever', i):
-                lev['progress'] = max(0.0, lev['progress'] - dt * 0.8)
-                lev['angle'] = 0.8 + 1.571 * lev['progress']
-        if pulling:
-            self.audio.loop('creak', 0.6)
         # the grate lifts once both are down
         if self.c1_levers_pulled() >= len(w.c1_levers) and w.grate_open < 1.0:
             w.grate_open = min(1.0, w.grate_open + dt / 3.5)
@@ -341,7 +329,7 @@ class ExtrasMixin:
 
     def c1_label(self, kind, key):
         if kind == 'c1lever':
-            return "[Hold E] Pull the release lever", self.world.c1_levers[key]['progress']
+            return "[E] Pull the release lever", self.world.c1_levers[key]['progress']
         if kind == 'c1key':
             return "[E] Take the key", 0.0
         if kind == 'keygate':

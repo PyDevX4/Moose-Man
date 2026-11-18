@@ -44,7 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "End of Chapter 3: the storm drain's flood grate is open as you left it in Chapter 1.",
+    "Levers and switches now take a single press of [E] instead of holding it. Valves still need holding.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
