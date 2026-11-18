@@ -44,10 +44,9 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Sharper, dirtier textures everywhere: cracked concrete, rusty metal, mossy brick, wood grain.",
-    "Lots more decor in every chapter: junk, barrels, pipes and chains in the tunnels,",
-    "timber props and stalactites in the mine, pallets and shelves in the factory,",
-    "stumps, ferns, mushrooms and branches in the woods.",
+    "The Herd: the people in the Ch1 holding room are dead now -- and in Ch5 they're walking.",
+    "Possessed, his eyes in their heads, they hunt you through the factory. Shoot them down.",
+    "Levers fixed: they start where they used to end up and turn a full 90 degrees.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

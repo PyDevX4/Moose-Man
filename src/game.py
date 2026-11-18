@@ -522,7 +522,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         for lv in (getattr(self, 'lv_up', None), getattr(self, 'lv_low', None)):
             if lv is not None:
                 for lev in lv.levers:
-                    lev.update(pulled=False, progress=0.0, angle=-0.8)
+                    lev.update(pulled=False, progress=0.0, angle=0.8)
         # chapter 4
         self.reset_ch4()
         self.reset_ch5()
@@ -1634,7 +1634,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         p.reset(x, W.SEWER_FLOOR, z, 0.0)
         self.flags.update({'snap', 'farcall', 'whisper1', 'tunnel', 'tunnelcall', 'junction', 'grate'})
         for lev in self.world.c1_levers:
-            lev.update(pulled=True, progress=1.0, angle=0.8)
+            lev.update(pulled=True, progress=1.0, angle=2.371)
         self.world.grate_open = 1.0
         self.app_done = {0, 1, 2}
         self.app = None
@@ -2882,7 +2882,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
     def continue_ch3_lower(self):
         self.chapter = 3
         for lev in self.lv_up.levers:
-            lev.update(pulled=True, angle=0.8)
+            lev.update(pulled=True, angle=2.371)
         self.begin_ch3('lower')
 
     def respawn_ch3(self):
@@ -2981,12 +2981,12 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         turning = False
         for i, lev in enumerate(lv.levers):
             if lev['pulled']:
-                lev['angle'] += (0.8 - lev['angle']) * min(1.0, dt * 8)
+                lev['angle'] += (2.371 - lev['angle']) * min(1.0, dt * 8)
                 continue
             if self.focus == ('lever', i) and keys[pygame.K_e]:
                 turning = True
                 lev['progress'] += dt / 1.6
-                lev['angle'] = -0.8 + 1.0 * lev['progress']
+                lev['angle'] = 0.8 + 1.571 * min(1.0, lev['progress'])
                 self.lever_noise_t = getattr(self, 'lever_noise_t', 0.0) - dt
                 if self.lever_noise_t <= 0:
                     self.lever_noise_t = 0.5
@@ -3600,6 +3600,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         self.turning = turning
 
     def update_herd(self, dt):
+        if all('model' in h for h in self.world.herd):
+            return              # they're dead: nothing turns to look at you any more
         p = self.player
         if self.world.room_of(p.x, p.z) not in ('holding', 'holding_hall'):
             return
@@ -3671,7 +3673,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         if room == 'holding' and 'holding' not in fl:
             fl.add('holding')
             self.audio.play('whisper', 0.7, pan=0.3)
-            self.message("They're all so still.", 3)
+            self.message("They're dead. All of them. He stood them up and they died like that.", 4)
         if room == 'chamber' and 'chamber' not in fl:
             fl.add('chamber')
             if self.valves_done < 5:
@@ -3883,7 +3885,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             r.draw(self.m_wheel, model=M @ RZ(v['angle']))
         self.draw_c1_dyn(r, cam)
         for h in self.world.herd:
-            r.draw(self.m_herd, model=T(*h['pos']) @ RY(h['yaw']) @ S(0.8 + 0.15 * h['scale']))
+            r.draw(self.m_herd, model=h['model'] if 'model' in h else T(*h['pos']) @ RY(h['yaw']) @ S(0.8 + 0.15 * h['scale']))
         for parts in moose_parts_list:
             for key, M in parts:
                 r.draw(self.m_moose[key], model=M)
@@ -4459,7 +4461,9 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 5:
+        if self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herd':
+            title, sub = "THE HERD", "you'll stand with them now."
+        elif self.chapter == 5:
             title, sub = "THE BEAST", "it is all of them now."
         elif self.chapter == 4:
             title, sub = "HE'S STRONGER NOW", "and he remembers you."

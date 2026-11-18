@@ -710,6 +710,11 @@ class AccountMixin:
                     continue
                 y = (get('y') or 0.0) + (13.0 if attr == 'beast' else 2.6)
                 out.append(((get('x'), y, get('z')), names.get(attr, attr.upper()), (240, 70, 55)))
+            h = getattr(self, 'herd5', None)
+            if self.chapter == 5 and h is not None and getattr(self, 'c5_phase', '') == 'drain':
+                for i in range(min(h.n, len(h._d['x']))):
+                    if h.alive(i):
+                        out.append(((h._d['x'][i], 2.4, h._d['z'][i]), 'HERD', (240, 70, 55)))
         if self.mark_puz:
             for pos, label in self.puzzle_marks():
                 out.append((pos, label, (240, 205, 70)))

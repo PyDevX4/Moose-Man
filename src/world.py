@@ -481,7 +481,7 @@ class World:
         for lx, lz, yaw in C1_LEVERS:
             light = {'pos': (lx, 1.8, lz), 'rad': 5.0, 'col': (0.9, 0.1, 0.06), 'flicker': 'soft'}
             self.lights.append(light)
-            lev = {'pos': (lx, 1.1, lz), 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': -0.8, 'light': light}
+            lev = {'pos': (lx, 1.1, lz), 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': 0.8, 'light': light}
             self.c1_levers.append(lev)
             self.place_c1_lever(lev, lx, lz, yaw)
         self.forest_boxes.append((-6.9, 46.3, -6.5, 48.0))
@@ -921,21 +921,45 @@ class World:
         self.valves.append({'pos': p, 'yaw': yaw, 'done': False, 'progress': 0.0, 'angle': 0.0, 'cell': (c, r), 'side': side})
 
     def herd_figure(self, b, x, z, yaw, h, layer, rng):
+        """One of the herd: dead. Whatever he did to them didn't keep -- they've slid down the
+        walls where he stood them, or dropped flat where there was no wall, antlers and all."""
         y = self.floor_at(x, z)
-        m = T(x, y, z) @ RY(yaw)
+        behind = self.floor_at(x - math.sin(yaw) * 0.9, z - math.cos(yaw) * 0.9)
+        sit = behind is None or behind > y + 0.5          # a wall at its back: slumped against it
+        m = T(x, y, z) @ RY(yaw + rng.uniform(-0.3, 0.3))
         leg = 0.8 * h
-        b.box((-0.09, leg / 2, 0), (0.12, leg, 0.13), layer, (0.7, 0.7, 0.7), m=m)
-        b.box((0.09, leg / 2, 0), (0.12, leg, 0.13), layer, (0.7, 0.7, 0.7), m=m)
         tor = 0.62 * h
-        b.box((0, leg + tor / 2, 0), (0.36 * h, tor, 0.2), layer, (1, 1, 1), m=m)
+        grey = (0.7, 0.7, 0.7)
+        if sit:
+            # sat down hard, back to the wall, legs out, head fallen to one side
+            hip = m @ T(0, 0.1, -0.15)
+            for sx in (-1, 1):
+                lm = hip @ T(sx * 0.1, 0, 0) @ RY(sx * rng.uniform(0.05, 0.3)) @ RX(math.pi / 2 - rng.uniform(0.0, 0.25))
+                b.box((0, leg / 2, 0), (0.12, leg, 0.13), layer, grey, m=lm)
+            tm = hip @ RX(-0.28 - rng.uniform(0.0, 0.2)) @ RZ(rng.uniform(-0.25, 0.25))
+        else:
+            # flat on its back, arms out
+            hip = m @ T(0, 0.08, 0)
+            for sx in (-1, 1):
+                lm = hip @ T(sx * 0.1, 0, 0) @ RY(sx * rng.uniform(0.1, 0.35)) @ RX(math.pi / 2)
+                b.box((0, leg / 2, 0), (0.12, leg, 0.13), layer, grey, m=lm)
+            tm = hip @ RX(-math.pi / 2) @ RZ(rng.uniform(-0.15, 0.15))
+        b.box((0, tor / 2, 0), (0.36 * h, tor, 0.2), layer, (1, 1, 1), m=tm)
         for s in (-1, 1):
-            am = m @ T(s * 0.21 * h, leg + tor - 0.04, 0) @ RZ(s * 0.06)
+            if sit:
+                am = tm @ T(s * 0.21 * h, tor - 0.04, 0) @ RZ(s * rng.uniform(0.15, 0.4)) @ RX(rng.uniform(-0.2, 0.3))
+            else:
+                am = tm @ T(s * 0.21 * h, tor - 0.04, 0) @ RZ(s * rng.uniform(1.0, 2.2))
             b.box((0, -0.33 * h, 0), (0.08, 0.66 * h, 0.09), L.SKIN, (0.85, 0.85, 0.85), m=am)
-        b.box((0, leg + tor + 0.06, 0), (0.08, 0.12, 0.08), L.SKIN, (0.8, 0.8, 0.8), m=m)
-        hp = m @ T(0, leg + tor + 0.1, 0)
-        head_pos = (float(hp[0, 3]), float(hp[1, 3]), float(hp[2, 3]))
-        self.extra_boxes.append((x - 0.22, z - 0.22, x + 0.22, z + 0.22))
-        self.herd.append({'pos': head_pos, 'yaw': yaw, 'base': yaw, 'scale': h})
+        b.box((0, tor + 0.06, 0), (0.08, 0.12, 0.08), L.SKIN, (0.8, 0.8, 0.8), m=tm)
+        droop = (rng.choice((-1, 1)) * rng.uniform(0.6, 1.0), rng.uniform(0.3, 0.7)) if sit else (rng.choice((-1, 1)) * 1.2, 0.0)
+        hm = tm @ T(0, tor + 0.1, 0) @ RZ(droop[0]) @ RX(droop[1])
+        hm = hm @ S(0.8 + 0.15 * h, 0.8 + 0.15 * h, 0.8 + 0.15 * h)
+        self.herd.append({'pos': (float(hm[0, 3]), float(hm[1, 3]), float(hm[2, 3])), 'yaw': yaw, 'base': yaw,
+                          'scale': h, 'model': hm})
+        # what came out of them
+        self.floor_decal(b, x + rng.uniform(-0.4, 0.4), z + rng.uniform(-0.4, 0.4), rng.uniform(1.2, 2.0),
+                         rng.uniform(1.0, 1.7), L.BLOOD, rot=rng.random() * 6)
         # shadowy blood under some
         if rng.random() < 0.5:
             self.floor_decal(b, x, z, 0.8, 0.8, L.BLOOD, rot=rng.random() * 6)

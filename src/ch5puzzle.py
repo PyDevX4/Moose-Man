@@ -64,7 +64,7 @@ class Ch5PuzzleMixin:
         self.keypad_flash = 0.0
         self.keypad_bad = 0.0
         for s in getattr(self, 'c5_switches', []):
-            s.update(on=False, progress=0.0, angle=-0.8)
+            s.update(on=False, progress=0.0, angle=0.8)
 
     def randomize_ch5(self, rng):
         from extras import pick_spread
@@ -84,7 +84,7 @@ class Ch5PuzzleMixin:
         self.c5_switches = []
         for k, (c, r, side) in enumerate(picks):
             p, yaw = fac.lever_spot(c, r, side)
-            self.c5_switches.append({'pos': p, 'yaw': yaw, 'machine': k // 2, 'on': False, 'progress': 0.0, 'angle': -0.8})
+            self.c5_switches.append({'pos': p, 'yaw': yaw, 'machine': k // 2, 'on': False, 'progress': 0.0, 'angle': 0.8})
         # the key: on one shelf in the dark hall
         self.key5_shelf = rng.randrange(len(C5.SHELVES))
         x, z, yaw = C5.SHELVES[self.key5_shelf]
@@ -335,17 +335,17 @@ class Ch5PuzzleMixin:
         pulling = False
         for i, s in enumerate(self.c5_switches):
             if s['on']:
-                s['angle'] += (0.8 - s['angle']) * min(1.0, dt * 8)
+                s['angle'] += (2.371 - s['angle']) * min(1.0, dt * 8)
                 continue
             if self.focus == ('switch5', i) and keys[pygame.K_e]:
                 pulling = True
                 s['progress'] += dt / 1.2
-                s['angle'] = -0.8 + 1.6 * min(1.0, s['progress'])
+                s['angle'] = 0.8 + 1.571 * min(1.0, s['progress'])
                 if s['progress'] >= 1.0:
                     self.mp_act('switch5', i=i)
             elif s['progress'] > 0:
                 s['progress'] = max(0.0, s['progress'] - dt)
-                s['angle'] = -0.8 + 1.6 * s['progress']
+                s['angle'] = 0.8 + 1.571 * s['progress']
         self.audio.loop('creak', 0.5 if pulling else 0.0)
         # first time into the hall: dark, and very quiet
         p = self.player

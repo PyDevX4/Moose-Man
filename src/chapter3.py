@@ -325,7 +325,7 @@ class Level:
         """A lever on a wall. Its housing is drawn on its own (see lever_box_mesh), so a new
         game can move it somewhere else."""
         p, yaw = self.lever_spot(c, r, side)
-        self.levers.append({'pos': p, 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': -0.8})
+        self.levers.append({'pos': p, 'yaw': yaw, 'pulled': False, 'progress': 0.0, 'angle': 0.8})
 
     def wall_spots(self, kinds='.', rows=None, cols=None):
         """Every (c, r, side) where a lever could hang: a floor cell next to rock."""

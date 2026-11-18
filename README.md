@@ -141,8 +141,13 @@ Checkpoints: the start of the chapter, and entering the hall.
 
 A smaller storm drain, past the second gate. Halfway down it there's a dead
 hunter, and his **shotgun** (**E** to take it). The drain is grated off at the
-far end, but a hole in its wall leads into a derelict factory. Nothing lives in
-the factory, and you'll need the time.
+far end, but a hole in its wall leads into a derelict factory.
+
+**The Herd walks here.** The people he stood up in the Chapter 1 sewers are up
+again: antlers wired to their heads, his red eyes, shambling after you slower
+than you walk. They hit hard. A shotgun blast up close puts one down (go for
+the head), and a gunshot brings every one in earshot. There are more of them
+in co-op.
 
 - **The steel door** has a 4-digit keypad. Four scraps of paper are hidden in the
   small rooms around it, each with one digit (`_ _ 7 _`). Type or tap the code in.

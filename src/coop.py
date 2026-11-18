@@ -33,7 +33,7 @@ MONSTERS = {1: [('moose', 'moose'), ('chaser', 'moose')],
             2: [('goat', 'goat'), ('deer', None), ('chaser2', 'moose')],
             3: [('elk', 'elk')],
             4: [('moose4', 'moose4')],
-            5: [('beast', 'beast')]}
+            5: [('beast', 'beast'), ('herd5', None)]}
 
 GATHER_NAMES = {'ladder': "the ladder", 'road': "the road", 'cabin': "the cabin", 'elevator': "the elevator",
                 'exit3': "the way out", 'exit4': "the second gate", 'factory': "the end of the drain",
@@ -667,6 +667,9 @@ class CoopMixin:
             return C4.MooseHunter(self.lv4, 0.0, 0.0)
         if attr == 'beast':
             return C5.Beast(0.0, 0.0, 0.0)
+        if attr == 'herd5':
+            import herd5
+            return herd5.Herd5(self.w5.fac, n=8)
         return None
 
     def mp_smooth_monsters(self, dt):
@@ -1035,6 +1038,11 @@ class CoopMixin:
         self.fuses_added(a['n'], a['x'], a['z'])
 
     # ---- chapter 5
+    def act_herd_dmg(self, a, frm):
+        h = getattr(self, 'herd5', None)
+        if self.mp_sim() and h is not None and frm is not None:
+            h.damage(int(a['i']), float(a['amt']))
+
     def act_beast_dmg(self, a, frm):
         b = self.beast
         if self.mp_sim() and b is not None and frm is not None:

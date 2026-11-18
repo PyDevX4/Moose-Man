@@ -185,7 +185,7 @@ class ExtrasMixin:
         w.grate_open = 0.0
         w.keygate_open = 0.0
         for lev in w.c1_levers:
-            lev.update(pulled=False, progress=0.0, angle=-0.8)
+            lev.update(pulled=False, progress=0.0, angle=0.8)
         self.key_taken = False
         self.c1_lever_t = 0.0
         # chapter 2
@@ -220,17 +220,17 @@ class ExtrasMixin:
         pulling = False
         for i, lev in enumerate(w.c1_levers):
             if lev['pulled']:
-                lev['angle'] += (0.8 - lev['angle']) * min(1.0, dt * 8)
+                lev['angle'] += (2.371 - lev['angle']) * min(1.0, dt * 8)
                 continue
             if self.focus == ('c1lever', i) and keys[pygame.K_e]:
                 pulling = True
                 lev['progress'] += dt / 1.6
-                lev['angle'] = -0.8 + lev['progress']
+                lev['angle'] = 0.8 + 1.571 * min(1.0, lev['progress'])
                 if lev['progress'] >= 1.0:
                     self.mp_act('c1lever', i=i)
             elif lev['progress'] > 0 and self.focus != ('c1lever', i):
                 lev['progress'] = max(0.0, lev['progress'] - dt * 0.8)
-                lev['angle'] = -0.8 + lev['progress']
+                lev['angle'] = 0.8 + 1.571 * lev['progress']
         if pulling:
             self.audio.loop('creak', 0.6)
         # the grate lifts once both are down
