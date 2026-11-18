@@ -3211,6 +3211,10 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.state = 'exit3'
         self.ex_t = 0.0
         self.ex_fired = set()
+        # the storm drain as you left it in Chapter One: levers pulled, flood grate up
+        for lev in self.world.c1_levers:
+            lev.update(pulled=True, progress=1.0, angle=2.371)
+        self.world.grate_open = 1.0
         self.set_mouse(False)
         self.audio.loop('breath', 0)
         self.audio.loop('sewer_amb', 0)

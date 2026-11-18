@@ -44,8 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Chapter 2: take the sack of corn by the cabin door and pour it out anywhere outside.",
-    "15 to 60 seconds later a deer comes to eat it. You pick where the shot is.",
+    "End of Chapter 3: the storm drain's flood grate is open as you left it in Chapter 1.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
