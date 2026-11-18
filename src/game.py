@@ -2804,7 +2804,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             pos = tuple(hip[i] + (eye[i] - hip[i]) * a for i in range(3))
             kick = 0.08 * (self.fire_cd / 1.5) ** 6
             M = T(*pos) @ RY(yaw) @ RX(-pitch - kick)
-            extras.append((self.m_rifle, M))
+            if a < 0.75:
+                extras.append((self.m_rifle, M))     # once it's up at your eye you're looking through the scope, not at it
             fov = self.settings['fov'] + (26 - self.settings['fov']) * a
             if self.muzzle_t > 0:
                 mp = tuple(pos[i] + fwd[i] * 0.85 for i in range(3))

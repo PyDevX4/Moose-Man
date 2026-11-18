@@ -44,8 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "New on the title screen: SURVIVE. First mode: CABIN DEFENSE -- the cabin in a blizzard, midnight to 6 AM.",
-    "Keep the stove going, and drive off the Moose Man, the Goat Man and the Elk with the rifle.",
+    "Fixed: looking down the rifle scope, the rifle's own scope no longer blocks the view.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
