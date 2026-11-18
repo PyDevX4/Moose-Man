@@ -31,9 +31,12 @@ uniform vec3 u_campos; uniform vec3 u_flashpos; uniform vec3 u_flashdir; uniform
 uniform vec3 u_ambient; uniform vec3 u_moondir; uniform vec3 u_mooncol; uniform vec3 u_fogcol; uniform float u_fogdens;
 uniform int u_nlights; uniform vec4 u_lpos[8]; uniform vec3 u_lcol[8];
 uniform float u_time; uniform float u_nofog; uniform vec3 u_tint;
+uniform vec4 u_clip; uniform float u_cliptop;
 in vec3 v_wpos; in vec3 v_norm; in vec2 v_uv; in vec3 v_col; flat in float v_layer;
 out vec4 f_color;
 void main() {
+  if (v_wpos.x > u_clip.x && v_wpos.x < u_clip.z && v_wpos.z > u_clip.y && v_wpos.z < u_clip.w
+      && v_wpos.y < u_cliptop) discard;
   float lay = v_layer; bool emis = false;
   if (lay > 99.5) { emis = true; lay -= 100.0; }
   bool water = abs(lay - 4.0) < 0.1;
@@ -229,6 +232,8 @@ mm.frame = (cmds, ui, uw, uh, pp) => {
       gl.uniform3fv(u.u_lcol, cmds.subarray(i + 90, i + 114));
       gl.uniform1f(u.u_nofog, 0);
       gl.uniform3f(u.u_tint, 1, 1, 1);
+      gl.uniform4f(u.u_clip, 1, 1, -1, -1);
+      gl.uniform1f(u.u_cliptop, -1e9);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, texArray);
       gl.uniform1i(u.u_tex, 0);
@@ -252,6 +257,12 @@ mm.frame = (cmds, ui, uw, uh, pp) => {
       gl.clearColor(cmds[i + 1], cmds[i + 2], cmds[i + 3], 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       i += 4;
+    } else if (op === 4) {
+      if (inScene) {
+        gl.uniform4f(u.u_clip, cmds[i + 1], cmds[i + 2], cmds[i + 3], cmds[i + 4]);
+        gl.uniform1f(u.u_cliptop, cmds[i + 5]);
+      }
+      i += 6;
     } else {
       break;
     }

@@ -2711,10 +2711,14 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights[:8], up=up)
         r.draw(self.m_ch2)
         r.draw(self.m_water2)
-        if snowcover:
-            r.draw(self.m_cover2)
-        if blizzard > 0:
-            self.draw_blizzard(cam, blizzard)
+        if snowcover or blizzard > 0:
+            m = 0.12                                   # just inside the walls; the roof is a little above 3 m
+            r.set_clip((-C2.CABIN_HX + m, -C2.CABIN_HZ + m, C2.CABIN_HX - m, C2.CABIN_HZ - m, C2.CABIN_Y + 3.6))
+            if snowcover:
+                r.draw(self.m_cover2)
+            if blizzard > 0:
+                self.draw_blizzard(cam, blizzard)
+            r.set_clip(None)
         Y = C2.CABIN_Y
         if door is None:
             door = self.door_angle

@@ -270,6 +270,8 @@ uniform vec3 u_lcol[8];
 uniform float u_time;
 uniform float u_nofog;
 uniform vec3 u_tint;
+uniform vec4 u_clip;
+uniform float u_cliptop;
 in vec3 v_wpos;
 in vec3 v_norm;
 in vec2 v_uv;
@@ -277,6 +279,8 @@ in vec3 v_col;
 flat in float v_layer;
 out vec4 f_color;
 void main() {
+    if (v_wpos.x > u_clip.x && v_wpos.x < u_clip.z && v_wpos.z > u_clip.y && v_wpos.z < u_clip.w
+        && v_wpos.y < u_cliptop) discard;   // e.g. no snow inside the cabin
     float lay = v_layer;
     bool emis = false;
     if (lay > 99.5) { emis = true; lay -= 100.0; }
@@ -488,6 +492,7 @@ class Renderer:
         setu(p, 'u_time', float(time))
         setu(p, 'u_nofog', 0.0)
         setu(p, 'u_tint', (1.0, 1.0, 1.0))
+        self.set_clip(None)
         n = min(8, len(lights))
         lp = np.zeros((8, 4), np.float32)
         lc = np.zeros((8, 3), np.float32)
@@ -503,6 +508,16 @@ class Renderer:
             p['u_lcol'].write(lc.tobytes())
         self.tex.use(0)
         self._model_is_ident = True
+
+    def set_clip(self, box=None):
+        """Hide everything drawn after this inside box = (x0, z0, x1, z1, y_top); None turns it off."""
+        p = self.prog
+        if box is None:
+            setu(p, 'u_clip', (1.0, 1.0, -1.0, -1.0))
+            setu(p, 'u_cliptop', -1e9)
+        else:
+            setu(p, 'u_clip', tuple(float(v) for v in box[:4]))
+            setu(p, 'u_cliptop', float(box[4]))
 
     def draw(self, mesh, model=None, tint=None, nofog=False):
         p = self.prog

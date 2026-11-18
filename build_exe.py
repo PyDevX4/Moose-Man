@@ -44,7 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Fixed: looking down the rifle scope, the rifle's own scope no longer blocks the view.",
+    "Fixed: Cabin Defense no longer snows inside the cabin.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

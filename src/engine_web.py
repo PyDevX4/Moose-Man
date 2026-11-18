@@ -8,6 +8,7 @@ Command stream (floats):
   BEGIN  1, then HEADER floats (matrices, camera, flashlight, environment, lights)
   DRAW   2, mesh id, nofog, tint r g b, 16 model floats (column-major)
   CLEAR  3, r, g, b
+  CLIP   4, x0, z0, x1, z1, y_top   (x0 > x1 turns it off)
 """
 import numpy as np
 
@@ -112,6 +113,12 @@ class Renderer:
         self.cmds.append(h)
 
     _IDENT = np.identity(4, dtype=np.float32)
+
+    def set_clip(self, box=None):
+        self._flush_draws()
+        if box is None:
+            box = (1.0, 1.0, -1.0, -1.0, -1e9)
+        self.cmds.append(np.array([4.0] + [float(v) for v in box[:5]], np.float32))
 
     def draw(self, mesh, model=None, tint=None, nofog=False):
         self._draws.append((mesh.id, 1.0 if nofog else 0.0, tint or (1.0, 1.0, 1.0),
