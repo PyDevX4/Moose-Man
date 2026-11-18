@@ -425,9 +425,15 @@ function touchStart(e) {
   e.preventDefault();
   for (const t of e.changedTouches) {
     const p = canvasPos(t.clientX, t.clientY);
-    if (!mode.startsWith('play')) {
+    if (!mode.startsWith('play') && !mode.includes('scroll')) {
       push({ t: 'md', b: 1, x: p.x, y: p.y });
-      held.set(t.identifier, { kind: 'tap' });
+      held.set(t.identifier, { kind: 'press' });
+      continue;
+    }
+    if (!mode.startsWith('play')) {
+      // the main menu screens: a tap clicks, a drag scrolls the page
+      push({ t: 'mm', dx: 0, dy: 0, x: p.x, y: p.y });
+      held.set(t.identifier, { kind: 'tap', x0: t.clientX, y0: t.clientY, y: t.clientY });
       continue;
     }
     if (t.clientX < window.innerWidth * 0.4 && !stick) {
@@ -449,6 +455,14 @@ function touchMove(e) {
   for (const t of e.changedTouches) {
     const h = held.get(t.identifier);
     if (!h) continue;
+    if (h.kind === 'tap' || h.kind === 'drag') {
+      if (h.kind === 'tap' && Math.hypot(t.clientX - h.x0, t.clientY - h.y0) > 10) h.kind = 'drag';
+      if (h.kind === 'drag') {
+        push({ t: 'wh', dy: (h.y - t.clientY) / Math.max(1, window.innerHeight) });
+        h.y = t.clientY;
+      }
+      continue;
+    }
     if (h.kind === 'stick' && stick) {
       let dx = t.clientX - stick.x0, dy = t.clientY - stick.y0;
       const d = Math.hypot(dx, dy), R = 60;
@@ -472,11 +486,21 @@ function touchEnd(e) {
     if (h.kind === 'stick') releaseStick();
     if (h.kind === 'tap') {
       const p = canvasPos(t.clientX, t.clientY);
+      push({ t: 'md', b: 1, x: p.x, y: p.y });
+      push({ t: 'mu', b: 1, x: p.x, y: p.y });
+    }
+    if (h.kind === 'press') {
+      const p = canvasPos(t.clientX, t.clientY);
       push({ t: 'mu', b: 1, x: p.x, y: p.y });
     }
   }
 }
 canvas.addEventListener('touchstart', touchStart, { passive: false });
+canvas.addEventListener('wheel', (e) => {
+  if (!booted || mode.startsWith('play')) return;
+  e.preventDefault();
+  push({ t: 'wh', dy: e.deltaY / Math.max(1, window.innerHeight) });
+}, { passive: false });
 canvas.addEventListener('touchmove', touchMove, { passive: false });
 canvas.addEventListener('touchend', touchEnd, { passive: false });
 canvas.addEventListener('touchcancel', touchEnd, { passive: false });

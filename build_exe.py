@@ -44,7 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Levers and switches now take a single press of [E] instead of holding it. Valves still need holding.",
+    "The main menu screens scroll: mouse wheel on PC, drag on a phone. The browser version",
+    "no longer hides the bottom of the menus behind the phone's toolbar.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

@@ -80,6 +80,9 @@ def _event(e):
             g.web_buttons[b - 1] = t == 'md'
         etype = pygame.MOUSEBUTTONDOWN if t == 'md' else pygame.MOUSEBUTTONUP
         return pygame.event.Event(etype, pos=(int(x), int(y)), button=b)
+    if t == 'wh':
+        # a drag or the wheel on a menu: dy is a fraction of the screen's height
+        return pygame.event.Event(pygame.MOUSEWHEEL, x=0, y=0, flipped=False, ui_dy=float(e.get('dy', 0)) * g.UH)
     if t == 'blur':
         g.web_keys.down.clear()
         g.web_buttons = [False, False, False]

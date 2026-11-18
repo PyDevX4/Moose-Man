@@ -613,7 +613,12 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.UW, self.UH = self.r.ui_w, self.r.ui_h
 
     def web_mode(self):
-        """What the page should put on top: touch controls, a text box, or nothing."""
+        """What the page should put on top: touch controls, a text box, or nothing.
+        '|scroll' on the main menu screens: there a drag scrolls the page and a tap clicks."""
+        m = self._web_mode()
+        return m + '|scroll' if self.in_scroll_menu() and not self.admin_open else m
+
+    def _web_mode(self):
         st = self.state
         if self.admin_open or getattr(self, 'keypad_open', False):
             return 'menu'
@@ -638,11 +643,34 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
 
     def ui_mouse(self):
         mx, my = self.web_mouse if WP.WEB else pygame.mouse.get_pos()
-        return mx * self.UW / self.win_w, my * self.UH / self.win_h
+        return mx * self.UW / self.win_w, my * self.UH / self.win_h + self.menu_scroll_y()
+
+    # ---- the main menu screens scroll (drag on a phone, mouse wheel on a PC)
+    MENU_STATES = ('title', 'settings', 'update', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby', 'login')
+
+    def in_scroll_menu(self):
+        st = self.state
+        return st in self.MENU_STATES and (st != 'settings' or self.settings_return == 'title')
+
+    def menu_scroll_y(self):
+        if not self.in_scroll_menu() or getattr(self, '_scroll_state', None) != self.state:
+            return 0.0
+        return getattr(self, 'menu_scroll', 0.0)
+
+    def menu_scroll_by(self, dy):
+        """dy in UI pixels: positive moves the page up (shows what's further down)."""
+        if getattr(self, '_scroll_state', None) != self.state:
+            self._scroll_state = self.state
+            self.menu_scroll = 0.0
+        self.menu_scroll = clamp(self.menu_scroll + dy, 0.0, getattr(self, 'menu_scroll_max', 0.0))
 
     def handle_event(self, ev):
         if ev.type == pygame.QUIT:
             self.running = False
+            return
+        if ev.type == pygame.MOUSEWHEEL and self.in_scroll_menu() and not self.admin_open:
+            dy = getattr(ev, 'ui_dy', None)
+            self.menu_scroll_by(dy if dy is not None else -ev.y * 40.0)
             return
         if ev.type == pygame.KEYDOWN and ev.key == pygame.K_BACKQUOTE:
             if self.is_admin:
@@ -3993,28 +4021,52 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             return
         self._render()
 
+    def draw_menu_screen(self, st):
+        if st == 'login':
+            self.draw_login_ui()
+        elif st in ('coop', 'coopname', 'coopjoin', 'lobby'):
+            self.draw_coop_ui()
+        elif st == 'title':
+            self.draw_title_ui()
+            self.draw_coop_ui()
+            self.draw_account_badge()
+        elif st == 'chapters':
+            self.draw_chapters_ui()
+        elif st == 'update':
+            self.draw_update_ui()
+        else:
+            self.draw_settings_ui()
+
     def _render(self):
         self.ui.fill((0, 0, 0, 0))
         st = self.state
         post = None
-        if st in ('title', 'settings', 'update', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby', 'login') and \
-                (st != 'settings' or self.settings_return == 'title'):
+        if self.in_scroll_menu():
             self.render_title_scene()
             post = self.post_params({'fear': 0.15, 'glitch': self.title_glitch()})
-            if st == 'login':
-                self.draw_login_ui()
-            elif st in ('coop', 'coopname', 'coopjoin', 'lobby'):
-                self.draw_coop_ui()
-            elif st == 'title':
-                self.draw_title_ui()
-                self.draw_coop_ui()
-                self.draw_account_badge()
-            elif st == 'chapters':
-                self.draw_chapters_ui()
-            elif st == 'update':
-                self.draw_update_ui()
-            else:
-                self.draw_settings_ui()
+            # drawn onto a page twice the screen's height, then the visible part cut out of it
+            screen = self.ui
+            tall = getattr(self, '_ui_tall', None)
+            if tall is None or tall.get_size() != (self.UW, self.UH * 2):
+                tall = self._ui_tall = pygame.Surface((self.UW, self.UH * 2), pygame.SRCALPHA)
+            tall.fill((0, 0, 0, 0))
+            self.ui = tall
+            self._ui_bottom = 0
+            try:
+                self.draw_menu_screen(st)
+            finally:
+                self.ui = screen
+            # on a phone the page can always be dragged up a bit (the keyboard or the browser's bars cover the bottom)
+            spare = self.UH * (0.45 if WP.WEB else 0.0)
+            self.menu_scroll_max = max(0.0, self._ui_bottom + 16 - self.UH + spare)
+            self.menu_scroll_by(0.0)
+            sy = int(self.menu_scroll_y())
+            screen.blit(tall, (0, 0), pygame.Rect(0, sy, self.UW, self.UH))
+            if self.menu_scroll_max > 1:
+                # a thin scroll bar on the right
+                h = self.UH * self.UH / (self.UH + self.menu_scroll_max)
+                y = (self.UH - h) * sy / self.menu_scroll_max
+                pygame.draw.rect(screen, (200, 190, 180, 90), (self.UW - 7, int(y), 4, int(h)))
         elif st == 'intro':
             self.r.fbo.use()
             self.r.fbo.clear(0, 0, 0, 1)
@@ -4240,6 +4292,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         if alpha < 255:
             img.set_alpha(alpha)
         rc = img.get_rect(**{anchor: pos})
+        if txt.strip() and rc.bottom > getattr(self, '_ui_bottom', 0):
+            self._ui_bottom = rc.bottom             # how far down the page goes (for scrolling the menus)
         if shadow:
             sh = fnt.render(txt, True, (0, 0, 0))
             if alpha < 255:
