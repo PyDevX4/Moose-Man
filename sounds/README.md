@@ -8,6 +8,11 @@ Drop your sound files in this folder. Name each one for what it is and where it 
 
 - **(loop)** in the name means it loops (ambience, breathing, machinery hum).
   Without it, the sound plays once.
+- **(random pitch)** in the name means each time it plays, it's pitched a little
+  higher or lower at random (up to about 2 semitones either way), so it never
+  sounds exactly the same twice. Good for footsteps, hits, gunshots, growls.
+  Both can go together: `goatman growl (random pitch).wav`,
+  `generator (loop) (random pitch).ogg`.
 - Any of .wav, .ogg or .mp3 works. **.ogg** and **.wav** are safest, and they
   work in the browser version too.
 - Then tell Claude the files are in, and they get hooked up: replacing the
