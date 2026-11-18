@@ -25,6 +25,25 @@ from version import VERSION     # noqa: E402
 SKIP = {'updater.py'}           # the browser always has the latest version
 
 
+def pack_sounds(zf):
+    """The browser's Python can't decode mp3/ogg: decode the sounds/ folder here, into custom_sounds.npz."""
+    os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+    import numpy as np
+    import pygame
+    import audio
+    pygame.mixer.init(audio.SR, -16, 2, 512)
+    arrays = {}
+    for key, a, loop, rp in audio.decode_sounds(os.path.join(HERE, "sounds")):
+        arrays["%s__%s%s" % (key, "L" if loop else "", "R" if rp else "")] = \
+            (np.clip(a, -1, 1) * 32767).astype(np.int16)
+    pygame.mixer.quit()
+    if arrays:
+        buf = io.BytesIO()
+        np.savez_compressed(buf, **arrays)
+        zf.writestr("custom_sounds.npz", buf.getvalue())
+        print("packed %d recorded sounds (%.0f KB)" % (len(arrays), len(buf.getvalue()) / 1024))
+
+
 def build():
     os.makedirs(DIST, exist_ok=True)
     for name in os.listdir(DIST):            # empty it (a test server may be sitting in it)
@@ -34,6 +53,7 @@ def build():
         for name in sorted(os.listdir(SRC)):
             if name.endswith(".py") and name not in SKIP:
                 zf.write(os.path.join(SRC, name), name)
+        pack_sounds(zf)
         # a stand-in so `import updater` still works
         zf.writestr("updater.py", "CAN_INSTALL = False\n\ndef tidy():\n    pass\n\n"
                                   "def check_async(cb):\n    pass\n\ndef download(*a, **k):\n    return None\n\n"

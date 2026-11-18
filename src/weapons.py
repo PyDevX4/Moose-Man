@@ -67,10 +67,10 @@ class WeaponsMixin:
                 return
             self.rev_ammo = getattr(self, 'rev_ammo', INV.REV_ROUNDS) - 1
             self.gun_cd = 0.42
-            self.audio.play('rifle', 0.6)
+            self.audio.play('revolver', 0.8)
         else:
             self.gun_cd = 1.4 if g == 'rifle' else 0.9
-            self.audio.play('rifle', 0.85)
+            self.audio.play('rifle_shot' if g == 'rifle' else 'rifle', 0.85)
         self.muzzle_t = 0.07
         self.muzzle_gun = g
         self.gun_kick = 1.0

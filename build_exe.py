@@ -44,7 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Chapter Two: you drop the knife in the snow after skinning the deer. No knife from Chapter Three on.",
+    "Real recorded sounds: footsteps in the forest, in snow and on wooden floors (each step a little different),",
+    "the lantern and headlamp switching on and off, and new revolver and rifle shots.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
@@ -208,7 +209,10 @@ def main():
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed",
            "--name", os.path.splitext(ASSET)[0], "--paths", "src",
            "--hidden-import", "glcontext", "--collect-submodules", "glcontext",
-           "--icon", ICON, ENTRY]
+           "--icon", ICON]
+    if os.path.isdir(os.path.join(HERE, "sounds")):
+        cmd += ["--add-data", "sounds" + os.pathsep + "sounds"]     # the recorded sounds
+    cmd += [ENTRY]
     print(" ".join(cmd))
     if subprocess.call(cmd) != 0:
         sys.exit("PyInstaller failed")

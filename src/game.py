@@ -699,8 +699,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 if ev.key == pygame.K_ESCAPE:
                     self.pause()
                 elif ev.key == pygame.K_f:
-                    self.flash_on = not self.flash_on
-                    self.audio.play('click', 0.6)
+                    self.toggle_light()
                 elif ev.key == pygame.K_q:
                     self.obj_t = 6.0
                 elif ev.key in (pygame.K_TAB, pygame.K_i):
@@ -1937,6 +1936,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             if in_water:
                 self.audio.play_rand('step_water', 3, vol * 1.2)
                 rad = 6.0 if crouch else (22 if sprint else 12)
+            elif abs(p.x) < C2.CABIN_HX and abs(p.z) < C2.CABIN_HZ:
+                self.audio.play_rand('step_wood', 4, vol)       # the cabin's floorboards
+                rad = 2.5 if crouch else (18 if sprint else 7)
             else:
                 self.audio.play_rand('step_snow', 4, vol)
                 rad = 2.5 if crouch else (18 if sprint else 7)
@@ -2138,7 +2140,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         p = self.player
         self.fire_cd = 1.5
         self.muzzle_t = 0.07
-        self.audio.play('rifle', 1.0)
+        self.audio.play('rifle_shot', 1.0)
         self.bolt_t = 0.55
         eye = p.eye()
         f = p.fwd()
@@ -2985,6 +2987,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             vol = 0.25 if crouch else (0.85 if sprint else 0.5)
             if outside:
                 self.audio.play_rand('step_snow', 4, vol)
+            elif lv.kind(*lv.cell_of(p.x, p.z)) == 'E':
+                self.audio.play_rand('step_wood', 4, vol)       # the elevator's boards
             else:
                 self.audio.play_rand('step_conc', 4, vol)
             rad = 2.5 if crouch else (20 if sprint else 8)

@@ -3,7 +3,7 @@ import random
 
 import numpy as np
 
-from audio import Audio as DesktopAudio, synth_all, SR
+from audio import Audio as DesktopAudio, synth_all, with_recordings, SR
 from webplat import js, to_js
 
 
@@ -15,12 +15,14 @@ class Audio(DesktopAudio):
         self.loop_vol = {name: -1.0 for name in self.LOOPS}
         self.loop_pan = {name: 0.0 for name in self.LOOPS}
         self.names = set()
-        for k, v in synth_all().items():
+        raw, self.variants, _ = with_recordings(synth_all())
+        for k, v in raw.items():
             a = np.clip(np.asarray(v, dtype=np.float32), -1, 1) * 0.98
             js.mm.addSound(k, to_js(np.ascontiguousarray(a)), SR)
             self.names.add(k)
 
     def play(self, name, vol=1.0, pan=0.0):
+        name = self.resolve(name, self.names)
         if name not in self.names:
             return None
         v = max(0.0, min(1.0, vol * self.master))
@@ -29,7 +31,7 @@ class Audio(DesktopAudio):
         return None
 
     def play_rand(self, prefix, count, vol=1.0, pan=0.0):
-        return self.play('%s%d' % (prefix, random.randrange(count)), vol, pan)
+        return self.play(self.resolve_rand(prefix, count), vol, pan)
 
     def loop(self, name, vol, pan=0.0):
         if name not in self.loop_vol:

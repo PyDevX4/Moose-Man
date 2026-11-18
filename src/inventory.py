@@ -146,6 +146,15 @@ class InventoryMixin:
     def has_light(self):
         return self.lantern_hand() is not None or self.headlamp_on()
 
+    def toggle_light(self):
+        """[F]: the lantern (or the headlamp, if that's your only light) on or off, with its own sound."""
+        self.flash_on = not self.flash_on
+        on = self.__dict__.get('_flash', True)
+        if self.lantern_hand() is None and self.headlamp_on():
+            self.audio.play('headlamp', 0.7)
+        else:
+            self.audio.play('lantern_on' if on else 'lantern_off', 0.7)
+
     def inv_lose(self, *items):
         """Gone: out of your hands and your bag."""
         inv = self._invd()
@@ -417,8 +426,7 @@ class InventoryMixin:
             if ev.key in (pygame.K_TAB, pygame.K_ESCAPE, pygame.K_i):
                 self.inv_toggle()
             elif ev.key == pygame.K_f:
-                self.flash_on = not self.flash_on
-                self.audio.play('click', 0.6)
+                self.toggle_light()
             return True
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             pos = self.ui_mouse()

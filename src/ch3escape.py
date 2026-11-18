@@ -315,7 +315,7 @@ class Ch3EscapeMixin:
         if self.eg_fire('bolt', 2.0):
             A.play('bolt', 0.7)
         if self.eg_fire('shot', 3.2):
-            A.play('rifle', 1.0)
+            A.play('rifle_shot', 1.0)
             self.shake = 1.0
             self.eg_flash = 0.08
             _, _, hp = self.eg_pose(t)
@@ -339,7 +339,7 @@ class Ch3EscapeMixin:
                 A.play('mstep', 0.55 + 0.04 * i)
         for i, s in enumerate(SHOTS):
             if self.eg_fire('rv%d' % i, s):
-                A.play('rifle', 0.6)
+                A.play('revolver', 0.8)
                 self.shake = max(self.shake, 0.35)
                 self.eg_flash = 0.06
                 x, z, yaw, y, _ = self.eg_elk(t)

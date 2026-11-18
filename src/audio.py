@@ -1,6 +1,14 @@
-"""Procedurally synthesized sound + simple positional audio on pygame.mixer."""
+"""Procedurally synthesized sound + simple positional audio on pygame.mixer.
+
+Recordings in the sounds/ folder (next to src/) replace or add to the synthesized ones. A file's
+name says what it is; "(loop)" loops it, "(random pitch)" pitches every play a little up or down.
+CUSTOM maps names onto the game's sounds.
+"""
 import math
+import os
 import random
+import re
+import sys
 import numpy as np
 import pygame
 
@@ -417,8 +425,127 @@ def synth_all():
     return s
 
 
+# ---------------------------------------------------------------------- recorded sounds
+# file name (lower case, letters and digits only, tags dropped) -> the game's sound
+CUSTOM = {
+    'forestfootstep': 'step_grass', 'snowfootstep': 'step_snow', 'woodfootstep': 'step_wood',
+    'lanternon': 'lantern_on', 'lanternoff': 'lantern_off',
+    'headlightonandoff': 'headlamp', 'headlamponandoff': 'headlamp',
+    'revolvershot': 'revolver', 'rifleshot': 'rifle_shot',
+}
+# sounds the game asks for that only exist as recordings: what plays without the file
+FALLBACK = {'step_wood': 'step_conc', 'lantern_on': 'click', 'lantern_off': 'click', 'headlamp': 'click',
+            'revolver': 'rifle', 'rifle_shot': 'rifle'}
+PITCHES = (-2.0, -1.3, -0.6, 0.0, 0.7, 1.4, 2.0)     # semitones, for "(random pitch)"
+
+
+def parse_sound_name(fname):
+    """'ForestFootstep (Random Pitch).mp3' -> ('step_grass', loop=False, random_pitch=True)."""
+    low = os.path.splitext(os.path.basename(fname))[0].lower()
+    loop = '(loop)' in low
+    rp = '(random pitch)' in low or '(randompitch)' in low
+    key = re.sub(r'[^a-z0-9]', '', re.sub(r'\(.*?\)', '', low))
+    return CUSTOM.get(key, key), loop, rp
+
+
+def sound_dir():
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands = [os.path.join(sys._MEIPASS, 'sounds')] if hasattr(sys, '_MEIPASS') else []
+    cands += [os.path.join(here, '..', 'sounds'), os.path.join(here, 'sounds')]
+    for d in cands:
+        if os.path.isdir(d):
+            return d
+    return None
+
+
+def decode_sounds(folder):
+    """Every recording in the folder as (key, mono float array at SR, loop, random_pitch). Needs pygame.mixer."""
+    out = []
+    if not folder or not pygame.mixer.get_init():
+        return out
+    freq = pygame.mixer.get_init()[0]
+    for f in sorted(os.listdir(folder)):
+        if not f.lower().endswith(('.wav', '.ogg', '.mp3', '.flac')):
+            continue
+        try:
+            a = pygame.sndarray.array(pygame.mixer.Sound(os.path.join(folder, f))).astype(np.float32) / 32768.0
+        except Exception as e:
+            print("sound %s: %s" % (f, e))
+            continue
+        if a.ndim == 2:
+            a = a.mean(axis=1)
+        if freq != SR and len(a) > 1:
+            a = np.interp(np.arange(0, len(a), freq / SR), np.arange(len(a)), a).astype(np.float32)
+        key, loop, rp = parse_sound_name(f)
+        out.append((key, a, loop, rp))
+    return out
+
+
+def recorded_sounds():
+    """The browser can't decode these itself: build_web.py packs them, decoded, into custom_sounds.npz."""
+    npz = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'custom_sounds.npz')
+    if os.path.exists(npz):
+        z = np.load(npz)
+        out = []
+        for name in z.files:
+            key, flags = name.split('__')
+            out.append((key, z[name].astype(np.float32) / 32767.0, 'L' in flags, 'R' in flags))
+        return out
+    return decode_sounds(sound_dir())
+
+
+def pitched(a, semis):
+    if abs(semis) < 1e-3:
+        return a
+    rate = 2.0 ** (semis / 12.0)
+    return np.interp(np.arange(0, len(a) - 1, rate), np.arange(len(a)), a).astype(np.float32)
+
+
+def with_recordings(raw):
+    """raw (the synthesized sounds) plus the recordings. Returns (sounds, variants, loops)."""
+    variants = {}
+    loops = set()
+    for key, a, loop, rp in recorded_sounds():
+        a = np.clip(a, -1, 1)
+        if key.startswith('step_') and len(a):
+            # footsteps all at one loudness, whatever level they were recorded at
+            rms = float(np.sqrt(np.mean(a * a))) or 1e-6
+            a = a * min(0.07 / rms, 0.95 / max(1e-6, float(np.abs(a).max())))
+        if loop:
+            a = loopable(a, min(0.3, len(a) / SR / 4))
+            loops.add(key)
+        raw[key] = a
+        if rp and not loop:
+            names = []
+            for i, st in enumerate(PITCHES):
+                nm = '%s~%d' % (key, i)
+                raw[nm] = pitched(a, st)
+                names.append(nm)
+            variants[key] = names
+        else:
+            variants[key] = [key]
+    return raw, variants, loops
+
+
 class Audio:
     LOOPS = ('forest_amb', 'sewer_amb', 'breath', 'creak', 'title_amb', 'winter_amb', 'gen_hum')
+    variants = {}
+
+    def resolve(self, name, have):
+        """Which sound actually plays for name: a random pitch of a recording, or its fallback."""
+        v = self.variants.get(name)
+        if v:
+            return random.choice(v)
+        if name not in have and name in FALLBACK:
+            return FALLBACK[name]
+        return name
+
+    def resolve_rand(self, prefix, count):
+        if prefix in self.variants:
+            return self.resolve(prefix, ())
+        if prefix in FALLBACK:
+            prefix = FALLBACK[prefix]
+        return '%s%d' % (prefix, random.randrange(count))
 
     def __init__(self, volume=0.8):
         self.master = volume
@@ -439,7 +566,7 @@ class Audio:
             return
         pygame.mixer.set_num_channels(40)
         pygame.mixer.set_reserved(len(self.LOOPS))
-        raw = synth_all()
+        raw, self.variants, loops = with_recordings(synth_all())
         self.sounds = {}
         for k, v in raw.items():
             a = np.clip(v, -1, 1)
@@ -469,7 +596,7 @@ class Audio:
         return (dx * rx + dz * rz) / d, d
 
     def play(self, name, vol=1.0, pan=0.0):
-        snd = self.sounds.get(name)
+        snd = self.sounds.get(self.resolve(name, self.sounds))
         if snd is None:
             return None
         ch = pygame.mixer.find_channel(True)
@@ -481,7 +608,7 @@ class Audio:
         return ch
 
     def play_rand(self, prefix, count, vol=1.0, pan=0.0):
-        return self.play('%s%d' % (prefix, random.randrange(count)), vol, pan)
+        return self.play(self.resolve_rand(prefix, count), vol, pan)
 
     def play3d(self, name, x, z, maxd=25.0, vol=1.0):
         pan, d = self._pan(x, z)

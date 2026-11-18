@@ -18,6 +18,21 @@ Drop your sound files in this folder. Name each one for what it is and where it 
 - Then tell Claude the files are in, and they get hooked up: replacing the
   game's built-in sound, or playing at a new moment if nothing is there yet.
 
+## Hooked up so far
+
+| File | Plays |
+|---|---|
+| ForestFootstep (Random Pitch) | your steps on the forest floor (Ch1) |
+| SnowFootstep (Random Pitch) | your steps in snow (Ch2, Ch3 outside, Ch5) |
+| WoodFootstep (Random Pitch) | your steps on the Ch2 cabin floor and the Ch3 elevator |
+| LanternOn / LanternOff | [F] with the lantern |
+| HeadlightOnAndOff | [F] when the headlamp is your only light |
+| RevolverShot | the revolver (also in the Ch3 Elk cutscene) |
+| RifleShot | the hunting rifle (Ch2 hunt, Ch3 cutscene) |
+
+Footsteps are all evened out to the same loudness. Everything else plays at
+the level you recorded it.
+
 ## The sounds the game makes right now (all generated in code)
 
 Use these to decide what to replace. You don't have to use these names. Name
