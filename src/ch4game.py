@@ -627,7 +627,7 @@ class Ch4Mixin:
             self.audio.loop('breath', 0)
             return
         tgt, lit = self.mp_ai_target(m, 'moose4')
-        if self.mp_sim() and not self.mp_frozen('moose4'):
+        if self.mp_sim() and not self.mp_frozen('moose4') and not self.stunned('moose4'):
             m.update(dt, tgt, lit)
         for ev in self.mp_events('moose4', m):
             if ev == 'step':
@@ -875,8 +875,10 @@ class Ch4Mixin:
             _, yaw, pitch = hold
             lp = self.held_lantern_pos(cam, yaw, pitch)
             M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
-            r.draw(self.m_lantern, model=M)
-            r.draw(self.m_lantern_lit if (self.flash_on or self.state != 'play') else self.m_lantern_off, model=M)
+            if self.lantern_hand():
+                r.draw(self.m_lantern, model=M)
+                r.draw(self.m_lantern_lit if (self.flash_on or self.state != 'play') else self.m_lantern_off, model=M)
+            self.draw_hand_items(r, cam, yaw, pitch)
 
     def moose4_parts(self):
         m = self.moose4

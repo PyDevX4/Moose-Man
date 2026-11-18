@@ -3,6 +3,8 @@ Mixed into game.Game."""
 import math
 import random
 
+import numpy as np
+
 import pygame
 
 from engine import Mesh, T, S, RX, RY, RZ
@@ -54,6 +56,9 @@ class Ch5Mixin:
     def init_ch5(self, prog):
         self.w5 = C5.World5()
         self.m_ch5 = Mesh(self.ctx, prog, self.w5.build())
+        self.m_props5 = [Mesh(self.ctx, prog, pr['data']) for pr in self.w5.props]
+        for pr in self.w5.props:
+            pr['data'] = None
         self.m_gate5 = Mesh(self.ctx, prog, C4.gate_mesh(C5.GATE_HW * 2, C5.GATE_H, True))
         self.m_grate5 = Mesh(self.ctx, prog, C4.gate_mesh(C5.TUN_HW * 2, C5.TUN_H, False))
         self.m_shotgun = Mesh(self.ctx, prog, C5.shotgun_mesh())
@@ -80,8 +85,11 @@ class Ch5Mixin:
         self.markers = []
         self.c5_phase = 'drain'
         self.herd5 = None
+        self.herdb = None
+        self.herdb_t = 0.0
         self.hurt_src = None
         self.won_t = -1.0
+        self.w5.reset_props()
         self.charge_hit = False
         self.fade_in5 = 0.0
         w = getattr(self, 'w5', None)
@@ -159,6 +167,11 @@ class Ch5Mixin:
             p.reset(0.0, 0.0, 49.0, 0.0)
             self.c5_phase = 'boss'
             self.won_t = -1.0
+            if self.mp_sim():
+                self.herdb = None
+                self.herdb_t = 0.0
+            if not self.mp_on():
+                w.reset_props()
             self.beast = C5.Beast(C5.BEAST_HOME[0], C5.BEAST_HOME[1], math.pi)
             self.beast.cool = 3.0
             if self.mp_on():
@@ -259,6 +272,11 @@ class Ch5Mixin:
         for b in self.bc_bolts:
             b[2] -= dt
         # the merge
+        if self.bc_fire('flash2', 23.6):
+            A.play('smash', 1.0)
+            A.play('moose_roar', 0.9)
+            self.bc_flash = 1.4
+            self.shake = 1.2
         if self.bc_fire('flash', 21.0):
             A.play('smash', 1.0)
             A.play('impact', 1.0)
@@ -275,7 +293,7 @@ class Ch5Mixin:
                     self.spawn_blood(bx + random.uniform(-4, 4), random.uniform(2, 8), bz + random.uniform(-3, 3), 34,
                                      vel=(0, 5.0, 0), spread=3.5, size=(0.06, 0.18))
                 self.burst_debris(bx + random.uniform(-6, 6), 0.3, bz + random.uniform(-6, 6), 20, up=4.0, spread=4.0)
-        if self.bc_fire('big', 26.0):
+        if self.bc_fire('big', 27.0):
             A.play('moose_roar', 1.0)
             A.play('elk_bugle', 1.0)
             A.play('goat_roar', 1.0)
@@ -297,6 +315,89 @@ class Ch5Mixin:
             self.fade_in5 = 0.8
             self.message("THE BEAST", 3)
 
+    # the three of them, up in the air: they wheel round each other, come apart, and the pieces build it
+    def _bc_ground(self, t):
+        """Each body's parts where they lie at 16.6s: the Moose Man standing, the Elk and the Goat Man dropped."""
+        bx, bz = C5.BEAST_HOME
+        yaw = -math.pi / 2 + (-math.pi / 2 + 0.25)
+        arms = 2.4 * sm(t, 16.4, 17.4)
+        moose = pose_moose(bx, 0, bz, yaw, 0.0, 0.0, hunch=0.15, shift=1.0, jaw=0.6, arms_up=arms,
+                           roll=0.15 * math.sin(t * 13) * sm(t, 17, 20), t=self.time)[0]
+        elk = C5.pose_beast(bx, bz, math.pi, merge=0.0, t=self.time, who='e')[0]
+        goat = C5.pose_beast(bx, bz, math.pi, merge=0.0, t=self.time, who='g')[0]
+        return [moose, elk, goat]
+
+    def _bc_air(self, t):
+        """The three bodies orbiting each other above the floor, as world-space parts. t frozen past 23.6."""
+        bx, bz = C5.BEAST_HOME
+        bodies = self._bc_ground(min(t, 23.6))
+        tt = min(t, 23.6)
+        up = sm(tt, 16.6, 18.6)
+        th = 1.3 * max(0.0, tt - 16.6) ** 1.35
+        R = 4.8 - 1.4 * sm(tt, 19.0, 21.5)
+        out = []
+        for i, parts in enumerate(bodies):
+            n = len(parts)
+            cx = sum(float(M[0, 3]) for _, M in parts) / n
+            cy = sum(float(M[1, 3]) for _, M in parts) / n
+            cz = sum(float(M[2, 3]) for _, M in parts) / n
+            a = th + i * 2 * math.pi / 3
+            ox = bx + R * math.cos(a)
+            oy = 6.8 + 0.7 * math.sin(tt * 2.6 + i * 2)
+            oz = bz + R * math.sin(a)
+            px, py, pz = cx + (ox - cx) * up, cy + (oy - cy) * up, cz + (oz - cz) * up
+            spin = RY(up * (th * 1.7 + i)) @ RX(up * 0.6 * math.sin(tt * 1.3 + i)) @ RZ(up * 0.5 * math.cos(tt * 1.1 + i * 2))
+            A = T(px, py, pz) @ spin @ T(-cx, -cy, -cz)
+            out.append(((px, py, pz), [(key, A @ M) for key, M in parts]))
+        return out
+
+    def _bc_exploded(self, t):
+        """Limbs and pieces flying apart from each body, spinning."""
+        e = sm(t, 21.0, 23.4)
+        out = []
+        k = 0
+        for (c, parts) in self._bc_air(t):
+            for key, M in parts:
+                k += 1
+                rnd = random.Random(k * 7919)
+                p = (float(M[0, 3]), float(M[1, 3]), float(M[2, 3]))
+                spread = 1.0 + 2.6 * e * rnd.uniform(0.6, 1.4)
+                q = (c[0] + (p[0] - c[0]) * spread + rnd.uniform(-1, 1) * 1.5 * e,
+                     c[1] + (p[1] - c[1]) * spread + rnd.uniform(-0.3, 1.2) * 1.5 * e,
+                     c[2] + (p[2] - c[2]) * spread + rnd.uniform(-1, 1) * 1.5 * e)
+                S_ = RY(e * rnd.uniform(-5, 5) * (1 + 0.4 * max(0.0, t - 21.0))) @ RX(e * rnd.uniform(-4, 4))
+                A = np.array(M, dtype=np.float32)
+                A[:3, 3] = 0.0
+                out.append((key, T(*q) @ S_ @ A))
+        return out
+
+    def _bc_build(self, t):
+        """Each piece of The Beast flies in from one of the torn-off pieces, growing into place."""
+        bx, bz = C5.BEAST_HOME
+        if getattr(self, '_bc_src', None) is None or self._bc_src[0] != id(self.bc_fired):
+            self._bc_src = (id(self.bc_fired), self._bc_exploded(23.6))
+        src = self._bc_src[1]
+        roar = sm(t, 26.2, 26.6)
+        final, info = C5.pose_beast(bx, bz, math.pi, merge=1.0, roar=roar, t=self.time)
+        out = []
+        ns = len(src)
+        for j, (key, M1) in enumerate(final):
+            M0 = src[(j * 7) % ns][1]
+            delay = 1.3 * ((j * 37) % 19) / 19.0
+            u = sm(t, 23.6 + delay, 23.6 + delay + 2.0)
+            if u >= 1.0:
+                out.append((key, M1))
+                continue
+            p0 = M0[:3, 3]
+            p1 = M1[:3, 3]
+            p = p0 + (p1 - p0) * u
+            p = (float(p[0]), float(p[1]) + 3.0 * math.sin(math.pi * u), float(p[2]))
+            A = np.array(M0, dtype=np.float32) * (1 - u) + np.array(M1, dtype=np.float32) * u
+            A[:3, 3] = 0.0
+            spin = RY((1 - u) * (2.5 + j % 5)) @ RX((1 - u) * (1.5 + j % 3))
+            out.append((key, T(*p) @ spin @ A))
+        return out, info
+
     def beast_cs_parts(self, t):
         bx, bz = C5.BEAST_HOME
         if t < 14.5:
@@ -308,26 +409,30 @@ class Ch5Mixin:
                                shift=1.0, reach=0.4, t=self.time)[0]
             bodies, _ = C5.pose_beast(mx, bz, math.pi, merge=0.0, t=self.time, who='eg')
             return moose + bodies, None
-        if t < 21.0:
-            # he turns to face you; then the bodies rise and wheel round him
+        if t < 16.6:
+            # he turns to face you, and roars
             yaw = -math.pi / 2 + (-math.pi / 2 + 0.25) * sm(t, 14.5, 15.8)
             arms = 2.4 * sm(t, 16.4, 17.4)
-            jaw = 0.9 if 15.9 < t < 17.2 else 0.3 + 0.3 * sm(t, 17.4, 20.0)
+            jaw = 0.9 if 15.9 < t < 17.2 else 0.3
             moose = pose_moose(bx, 0, bz, yaw, 0.0, 0.0, hunch=0.45 - 0.3 * sm(t, 16.4, 17.4), shift=1.0, jaw=jaw,
-                               arms_up=arms, roll=0.15 * math.sin(t * 13) * sm(t, 17, 20), t=self.time)[0]
+                               arms_up=arms, t=self.time)[0]
             bodies, _ = C5.pose_beast(bx, bz, math.pi, merge=0.0, t=self.time, who='eg')
-            lift = 4.5 * sm(t, 16.6, 19.0)
-            spin = 1.6 * (t - 16.6) ** 1.6 if t > 16.6 else 0.0
-            A = T(bx, lift + 0.4 * math.sin(t * 5.0) * sm(t, 17, 19), bz) @ RY(spin) @ T(-bx, 0, -bz)
-            bodies = [(key, A @ M) for key, M in bodies]
             return moose + bodies, None
-        k = sm(t, 21.0, 25.4)
-        roar = sm(t, 21.0, 21.4) * (1 - sm(t, 22.0, 22.6)) + sm(t, 26.0, 26.4) * (1 - sm(t, 28.5, 29.5))
-        jit = (1.4 if 21.0 < t < 25.5 else 0.0)
-        parts, info = C5.pose_beast(bx, bz, math.pi, merge=k, roar=roar, jitter=jit, t=self.time,
-                                    slam=1.2 * sm(t, 21.0, 21.8) * (1 - k))
+        if t < 21.0:
+            # all three of them up off the floor, wheeling round each other
+            out = []
+            for _, parts in self._bc_air(t):
+                out += parts
+            return out, None
+        if t < 23.6:
+            return self._bc_exploded(t), None
+        if t < 27.0:
+            return self._bc_build(t)
+        roar = sm(t, 26.2, 26.6) * (1 - sm(t, 28.5, 29.5))
+        parts, info = C5.pose_beast(bx, bz, math.pi, merge=1.0, roar=roar, t=self.time,
+                                    jitter=0.3 * (1 - sm(t, 27.0, 28.0)))
         # it swells past its size, then settles
-        pulse = 1.0 + 0.16 * math.sin(clamp((t - 25.0) / 1.6, 0, 1) * math.pi)
+        pulse = 1.0 + 0.16 * math.sin(clamp((t - 27.0) / 1.6, 0, 1) * math.pi)
         if pulse != 1.0:
             A = T(bx, 0, bz) @ S(pulse) @ T(-bx, 0, -bz)
             parts = [(key, A @ M) for key, M in parts]
@@ -349,7 +454,7 @@ class Ch5Mixin:
         elif t < 14.5:
             tgt = (mx, 2.4, bz)
         else:
-            tgt = (bx, 2.6 + 6.0 * sm(t, 16.6, 19.0) * (1 - sm(t, 21.0, 23.0)) + 6.5 * sm(t, 21.0, 26.0), bz)
+            tgt = (bx, 2.6 + 4.4 * sm(t, 16.6, 19.0) + 1.6 * sm(t, 23.6, 27.0), bz)
         if t < 1.2:
             px, pz, pyaw, ppitch = self.bc_cam0
             fwd0 = (math.sin(pyaw) * math.cos(ppitch), math.sin(ppitch), math.cos(pyaw) * math.cos(ppitch))
@@ -369,8 +474,8 @@ class Ch5Mixin:
         lights.append(((lp[0], lp[1] + 0.2, lp[2]), 9.0, self.lantern_col()))
         self.draw_world5(cam, fwd, lights, parts=[parts])
         self.spot5 = []
-        if t > 26.6:
-            a = int(255 * clamp((t - 26.6) / 0.8, 0, 1) * clamp((self.CS_END - 0.6 - t) / 0.8, 0, 1))
+        if t > 27.6:
+            a = int(255 * clamp((t - 27.6) / 0.8, 0, 1) * clamp((self.CS_END - 0.6 - t) / 0.8, 0, 1))
             self.blit_text("THE BEAST", self.f_title, (180, 20, 15), (self.UW // 2, self.UH // 2 - 90), 'midtop', alpha=a)
         y = self.UH - 120
         for m in reversed(self.msgs):
@@ -415,7 +520,7 @@ class Ch5Mixin:
             self.kill()
 
     def fire_shotgun(self):
-        if not self.has_shotgun or self.state != 'play' or self.pump_t > 0:
+        if not self.holding('shotgun') or self.state != 'play' or self.pump_t > 0:
             return
         if self.shells <= 0:
             self.audio.play('click', 0.7)
@@ -425,117 +530,137 @@ class Ch5Mixin:
         self.shells -= 1
         self.pump_t = 0.9
         self.muzzle_t = 0.07
+        self.muzzle_gun = 'shotgun'
         self.kick = 1.0
         self.shake = max(self.shake, 0.25)
         self.audio.play('rifle', 0.85)
         p = self.player
-        cam = p.eye()
-        f = p.fwd()
-        b = self.beast
-        hit_any = self.shoot_herd(cam, f, p.yaw)
-        if b is not None and not b.dead:
-            _, info = b.parts(self.time)
-            right = (-math.cos(p.yaw), 0.0, math.sin(p.yaw))
-            up = (right[1] * f[2] - right[2] * f[1], right[2] * f[0] - right[0] * f[2], right[0] * f[1] - right[1] * f[0])
-            total = 0.0
-            for i in range(9):
-                a = random.uniform(0, 2 * math.pi)
-                rr = 0.06 * math.sqrt(random.random())
-                d = tuple(f[j] + (right[j] * math.cos(a) + up[j] * math.sin(a)) * rr for j in range(3))
-                ln = math.sqrt(sum(v * v for v in d))
-                d = tuple(v / ln for v in d)
-                best = None
-                for hc in info['heads']:
-                    tt = C5.ray_sphere(cam, d, hc, 1.25)
-                    if tt is not None and (best is None or tt < best[0]):
-                        best = (tt, 2.6)
-                for c, r in info['body']:
-                    tt = C5.ray_sphere(cam, d, c, r)
-                    if tt is not None and (best is None or tt < best[0] - 0.3):
-                        best = (tt, 1.0)
-                if best is None:
-                    continue
-                dist, mult = best
-                fall = clamp(1.0 - (dist - 14.0) / 34.0, 0.25, 1.0)
-                total += 1.25 * mult * fall
-                hp = tuple(cam[j] + d[j] * dist for j in range(3))
-                self.spawn_blood(hp[0], hp[1], hp[2], 3, vel=(-d[0] * 2, 1.5, -d[2] * 2), spread=1.8, size=(0.05, 0.12))
-                hit_any = True
-            if total > 0:
-                if self.mp_sim():
-                    b.damage(total)
-                else:
-                    self.mp_tell('beast_dmg', amt=round(total, 2))
-                self.audio.play3d('tackle', b.x, b.z, 80, 0.5)
-        if hit_any:
-            self.hitmark_t = 0.18
+        self.shoot_rays5(p.eye(), p.fwd(), p.yaw, 9, 1.25, 0.06)
 
-    def shoot_herd(self, cam, f, yaw):
-        """Nine pellets into whichever of them is in the way. Returns True on a hit."""
-        h = getattr(self, 'herd5', None)
-        if h is None or self.c5_phase != 'drain':
-            return False
-        if self.mp_sim():
-            h.hear(cam[0], cam[2], 26.0)
-        else:
-            self.mp_tell('hear', m='herd5', x=round(cam[0], 2), z=round(cam[2], 2), r=26.0)
+    def active_herds(self):
+        out = []
+        if self.c5_phase == 'drain' and getattr(self, 'herd5', None) is not None:
+            out.append(('herd5', self.herd5))
+        if self.c5_phase in ('boss', 'won') and getattr(self, 'herdb', None) is not None:
+            out.append(('herdb', self.herdb))
+        return out
+
+    def shoot_rays5(self, cam, f, yaw, n, dmg, spread):
+        """n pellets (or one bullet) into whatever is in the way: the Herd or The Beast."""
+        herds = self.active_herds()
+        for attr, h in herds:
+            h._fit()
+            if self.mp_sim():
+                h.hear(cam[0], cam[2], 26.0)
+            else:
+                self.mp_tell('hear', m=attr, x=round(cam[0], 2), z=round(cam[2], 2), r=26.0)
+        b = self.beast
+        info = None
+        if b is not None and not b.dead and self.c5_phase == 'boss':
+            _, info = b.parts(self.time)
         fac = self.w5.fac
-        h._fit()
-        live = [i for i in range(h.n) if h.alive(i) and math.hypot(h._d['x'][i] - cam[0], h._d['z'][i] - cam[2]) < 40]
-        if not live:
-            return False
         right = (-math.cos(yaw), 0.0, math.sin(yaw))
         up = (right[1] * f[2] - right[2] * f[1], right[2] * f[0] - right[0] * f[2], right[0] * f[1] - right[1] * f[0])
-        dmg = {}
+        herd_dmg = {}
+        total = 0.0
         hit = False
-        for _ in range(9):
+        for _ in range(n):
             a = random.uniform(0, 2 * math.pi)
-            rr = 0.06 * math.sqrt(random.random())
+            rr = spread * math.sqrt(random.random())
             d = tuple(f[j] + (right[j] * math.cos(a) + up[j] * math.sin(a)) * rr for j in range(3))
             ln = math.sqrt(sum(v * v for v in d))
             d = tuple(v / ln for v in d)
             best = None
-            for i in live:
-                for c, rad, mult in h.hit_spheres(i):
-                    tt = C5.ray_sphere(cam, d, c, rad)
+            for attr, h in herds:
+                for i in range(h.n):
+                    if not h.alive(i) or math.hypot(h._d['x'][i] - cam[0], h._d['z'][i] - cam[2]) > 45:
+                        continue
+                    for c, rad, mult in h.hit_spheres(i):
+                        tt = C5.ray_sphere(cam, d, c, rad)
+                        if tt is not None and (best is None or tt < best[0]):
+                            best = (tt, ('h', attr, i), mult)
+            if info is not None:
+                for hc in info['heads']:
+                    tt = C5.ray_sphere(cam, d, hc, 1.25)
                     if tt is not None and (best is None or tt < best[0]):
-                        best = (tt, i, mult)
+                        best = (tt, ('b',), 2.6)
+                for c, r in info['body']:
+                    tt = C5.ray_sphere(cam, d, c, r)
+                    if tt is not None and (best is None or tt < best[0] - 0.3):
+                        best = (tt, ('b',), 1.0)
             if best is None:
                 continue
-            dist, i, mult = best
-            hx, hz = cam[0] + d[0] * dist, cam[2] + d[2] * dist
-            if self.w5.region(cam[0], cam[2]) == 'fac' and not fac.los(cam[0], cam[2], hx, hz):
-                continue            # there's a wall in the way
-            fall = clamp(1.0 - (dist - 8.0) / 22.0, 0.3, 1.0)
-            dmg[i] = dmg.get(i, 0.0) + 1.25 * mult * fall
-            hy = cam[1] + d[1] * dist
-            self.spawn_blood(hx, hy, hz, 3, vel=(d[0] * 3, 1.2, d[2] * 3), spread=1.6, size=(0.04, 0.1))
+            dist, who, mult = best
+            hx, hy, hz = cam[0] + d[0] * dist, cam[1] + d[1] * dist, cam[2] + d[2] * dist
+            if who[0] == 'h':
+                if self.w5.region(cam[0], cam[2]) == 'fac' and not fac.los(cam[0], cam[2], hx, hz):
+                    continue            # a wall in the way
+                fall = clamp(1.0 - (dist - 8.0) / 22.0, 0.3, 1.0) if n > 1 else 1.0
+                key = (who[1], who[2])
+                herd_dmg[key] = herd_dmg.get(key, 0.0) + dmg * mult * fall
+                self.spawn_blood(hx, hy, hz, 3, vel=(d[0] * 3, 1.2, d[2] * 3), spread=1.6, size=(0.04, 0.1))
+            else:
+                fall = clamp(1.0 - (dist - 14.0) / 34.0, 0.25, 1.0) if n > 1 else 1.0
+                total += dmg * mult * fall
+                self.spawn_blood(hx, hy, hz, 3, vel=(-d[0] * 2, 1.5, -d[2] * 2), spread=1.8, size=(0.05, 0.12))
             hit = True
-        for i, amt in dmg.items():
+        for (attr, i), amt in herd_dmg.items():
+            h = getattr(self, attr, None)
+            if h is None:
+                continue
             if self.mp_sim():
                 h.damage(i, amt)
             else:
-                self.mp_tell('herd_dmg', i=i, amt=round(amt, 2))
+                self.mp_tell('herd_dmg', h=attr, i=i, amt=round(amt, 2))
+        if total > 0 and b is not None:
+            if self.mp_sim():
+                b.damage(total)
+            else:
+                self.mp_tell('beast_dmg', amt=round(total, 2))
+            self.audio.play3d('tackle', b.x, b.z, 80, 0.5)
+        if hit:
+            self.hitmark_t = 0.18
         return hit
 
     def update_herd5(self, dt):
-        h = getattr(self, 'herd5', None)
+        self.update_herd_obj(dt, 'herd5', ('fac', 'link'))
+
+    def spawn_herd_b(self, n):
+        """Half dead, The Beast calls the Herd: they claw up out of the floor round it."""
+        b = self.beast
+        w = self.w5
+        if b is None:
+            return
+        if getattr(self, 'herdb', None) is None:
+            self.herdb = H5.Herd5(w.fac, n=0, world=w)
+        h = self.herdb
+        for k in range(n):
+            for _ in range(12):
+                a = random.random() * 2 * math.pi
+                rr = random.uniform(7.0, 12.0)
+                x, z = w.collide(b.x + math.cos(a) * rr, b.z + math.sin(a) * rr, 0.5)
+                if w.region(x, z) == 'hall':
+                    h.add(x, z)
+                    break
+
+    def update_herd_obj(self, dt, attr, regions):
+        h = getattr(self, attr, None)
         if h is None:
             return
         p = self.player
         w = self.w5
         if self.mp_sim():
             tg = []
-            if self.local_alive() and self.state == 'play' and w.region(p.x, p.z) in ('fac', 'link'):
+            if self.local_alive() and self.state == 'play' and w.region(p.x, p.z) in regions:
                 tg.append((p.x, p.z))
             if self.mp_on():
                 area = self.mp_area()
                 for q in self.mp.peers.values():
-                    if q.alive and q.area == area and not self.being_killed(q.pid) and w.region(q.x, q.z) in ('fac', 'link'):
+                    if q.alive and q.area == area and not self.being_killed(q.pid) and w.region(q.x, q.z) in regions:
                         tg.append((q.x, q.z))
             h.update(dt, tg)
         h.animate(dt)
-        evs = self.mp_events('herd5', h)
+        evs = self.mp_events(attr, h)
         h.events = []
         for ev in evs:
             kind, i = ev[0], int(ev[1])
@@ -557,10 +682,30 @@ class Ch5Mixin:
                 self.spawn_blood(x, 1.0, z, 14, spread=2.0)
             elif kind == 'flinch':
                 self.audio.play3d('snap', x, z, 20, 0.4)
-        # breathing down your neck
-        near = min((math.hypot(h._d['x'][i] - p.x, h._d['z'][i] - p.z) for i in range(h.n) if h.alive(i)
-                    and h.st[i] in (H5.CHASE, H5.WIND, H5.RECOVER)), default=99.0)
-        self.audio.loop('breath', clamp(1.0 - near / 10.0, 0.0, 0.7))
+            elif kind == 'rise':
+                self.audio.play3d('snap', x, z, 40, 1.0)
+                self.burst_debris(x, 0.2, z, 14, up=3.0, spread=1.2, size=(0.05, 0.2))
+        if attr == 'herd5':
+            near = min((math.hypot(h._d['x'][i] - p.x, h._d['z'][i] - p.z) for i in range(h.n) if h.alive(i)
+                        and h.st[i] in (H5.CHASE, H5.WIND, H5.RECOVER)), default=99.0)
+            self.audio.loop('breath', clamp(1.0 - near / 10.0, 0.0, 0.7))
+
+    def act_smash5(self, a, frm):
+        """The Beast went straight through something."""
+        w = self.w5
+        i = int(a['i'])
+        if not (0 <= i < len(w.props)) or w.props[i]['broken']:
+            return
+        pr = w.props[i]
+        pr['broken'] = True
+        x, z = pr['c']
+        s = pr['size']
+        self.audio.play3d('smash', x, z, 120, 1.0)
+        self.audio.play3d('impact', x, z, 120, 0.8)
+        p = self.player
+        self.shake = max(self.shake, clamp(1.2 - math.hypot(p.x - x, p.z - z) / 40.0, 0.2, 1.2))
+        self.burst_debris(x, 1.0, z, int(30 + 12 * s), up=5.0 + s, spread=2.0 + s, size=(0.1, 0.35 + 0.1 * s))
+        self.burst_debris(x, 4.0, z, 20, up=3.0, spread=2.0 + s, size=(0.06, 0.2))
 
     def start_reload(self):
         if self.shells < SHELLS and self.reload_t < 0:
@@ -700,8 +845,26 @@ class Ch5Mixin:
         w = self.w5
         tgt = self.mp_ai_target(b, 'beast')[0]
         if self.mp_sim():
+            w.smash_hits = set()
             b.update(dt, tgt.x, tgt.z, tgt.vx, tgt.vz, w)
             self.resolve_beast_events(b, tgt)
+            # whatever it ran into, it went through
+            for i in sorted(w.smash_hits):
+                if not w.props[i]['broken']:
+                    self.mp_act('smash5', i=i)
+            w.smash_hits = set()
+            # half dead, it keeps calling the Herd up out of the floor
+            if b.enraged and not b.dead:
+                self.herdb_t -= dt
+                h = getattr(self, 'herdb', None)
+                if self.herdb_t <= 0 and (h is None or h.count_alive() < 3):
+                    self.herdb_t = 16.0
+                    self.spawn_herd_b(2 + self.mp_count())
+            h = getattr(self, 'herdb', None)
+            if b.dead and h is not None and h.count_alive() > 0:
+                for i in range(h.n):
+                    h.damage(i, 99.0)           # it dies, and what it was holding up drops
+        self.update_herd_obj(dt, 'herdb', ('hall',))
         for ev in self.mp_events('beast', b):
             kind = ev[0]
             if kind == 'step':
@@ -743,8 +906,11 @@ class Ch5Mixin:
                     self.flags.add('rain_tip')
                     self.message("The roof is coming down -- get out from under the red!", 3.5)
             elif kind == 'enrage':
-                self.message("It's bleeding. It's angry now.", 3)
+                self.message("It's bleeding. It's calling them -- the Herd is coming up out of the floor.", 4)
                 self.audio.play('stinger', 0.8)
+                self.audio.play('moose_roar', 1.0)
+                if self.mp_sim():
+                    self.herdb_t = 0.0
             elif kind == 'die':
                 self.audio.play('moose_roar', 1.0)
                 self.audio.play('elk_bugle', 1.0)
@@ -867,11 +1033,12 @@ class Ch5Mixin:
         if self.focus and self.ch5_puzzle_interact(*self.focus):
             return
         if self.focus == ('shotgun', 0) and not self.has_shotgun:
-            self.has_shotgun = True
+            self.give('shotgun')
+            self.give('headlamp')
             self.shells = SHELLS
             self.audio.play('bolt', 0.8)
-            self.message("A shotgun. Loaded. Somebody came down here before you.", 4.5)
-            self.set_objective("Keep going.  [Left mouse] fire   [R] reload")
+            self.message("A shotgun, loaded -- and the headlamp off his skull. Both in your backpack. [Tab]", 5)
+            self.set_objective("Keep going. [Tab] backpack: the shotgun takes two hands -- wear the headlamp.")
 
     # ------------------------------------------------------------------ out
     def start_exit5(self):
@@ -958,9 +1125,15 @@ class Ch5Mixin:
                 env = mix_env(FACTORY_ENV, DAWN_ENV, out)
         r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights, far=200.0)
         r.draw(self.m_ch5)
+        for i, pr in enumerate(w.props):
+            if not pr['broken']:
+                r.draw(self.m_props5[i])
         r.draw(self.m_gate5, model=T(0.0, w.gate_open * (C5.GATE_H - 0.6), C5.HALL_Z1 - 0.4))
         r.draw(self.m_grate5, model=T(0.0, 0.0, C5.TUN_Z1 - 0.35))
         self.draw_ch5_dyn(r)
+        if not self.owns('headlamp'):
+            hx, hz = C5.SHOTGUN_POS[0] - 0.1, C5.SHOTGUN_POS[2] + 0.3
+            r.draw(self.m_headlamp, model=T(hx - 0.25, 0.14, hz - 0.55) @ RY(math.pi) @ S(1.25))
         if not self.has_shotgun:
             sx, sy, sz = C5.SHOTGUN_POS
             r.draw(self.m_shotgun, model=T(sx, 0.06, sz) @ RY(0.4) @ RZ(math.pi / 2))
@@ -991,9 +1164,11 @@ class Ch5Mixin:
             yaw, pitch = hold
             lp = self.held_lantern_pos(cam, yaw, pitch)
             M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
-            r.draw(self.m_lantern, model=M)
-            r.draw(self.m_lantern_lit if self.flash_on else self.m_lantern_off, model=M)
-            if self.has_shotgun:
+            if self.lantern_hand():
+                r.draw(self.m_lantern, model=M)
+                r.draw(self.m_lantern_lit if self.flash_on else self.m_lantern_off, model=M)
+            self.draw_hand_items(r, cam, yaw, pitch)
+            if self.holding('shotgun'):
                 right = (-math.cos(yaw), 0.0, math.sin(yaw))
                 f = fwd
                 upv = (right[1] * f[2] - right[2] * f[1], right[2] * f[0] - right[0] * f[2], right[0] * f[1] - right[1] * f[0])
@@ -1019,8 +1194,7 @@ class Ch5Mixin:
         lit = self.flash_on and self.flicker_t <= 0
         lights = [((lp[0], lp[1] + 0.2, lp[2]), 10.0, self.lantern_col())] if lit else []
         parts = [self.beast.parts(self.time)[0]] if self.beast is not None else []
-        h = getattr(self, 'herd5', None)
-        if h is not None and self.c5_phase == 'drain':
+        for _attr, h in self.active_herds():
             for i, pp in enumerate(h.parts(self.time)):
                 if math.hypot(h._d['x'][i] - p.x, h._d['z'][i] - p.z) < 48:
                     parts.append(pp)
@@ -1060,7 +1234,7 @@ class Ch5Mixin:
             pygame.draw.rect(self.ui, (200, 50, 40, 230) if self.hp5 < 35 else (210, 200, 185, 220),
                              (26, self.UH - 94, int(200 * self.hp5 / 100), 10))
             self.blit_text("HEALTH", self.f_small, (200, 190, 180), (26, self.UH - 116))
-        if self.has_shotgun:
+        if self.holding('shotgun'):
             for i in range(SHELLS):
                 x = self.UW - 30 - i * 16
                 c = (200, 40, 30, 240) if i < self.shells else (60, 50, 50, 140)

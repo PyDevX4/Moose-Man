@@ -203,12 +203,11 @@ class ExtrasMixin:
             for pl in lv.planks:
                 pl['broken'] = False
         self.mon_stun = {}
+        self.mon_scare = {}
 
     def stunned(self, attr):
         return self.time < self.mon_stun.get(attr, -1.0)
 
-    def act_stun(self, a, frm):
-        self.mon_stun[a['m']] = self.time + 1.0
 
     # ================================================================== chapter 1
     def c1_levers_pulled(self):
@@ -380,7 +379,7 @@ class ExtrasMixin:
     def take_knife(self):
         self.has_knife = True
         self.audio.play('wood_pick', 0.6)
-        self.message("A hunting knife. Sharp.", 3)
+        self.message("A hunting knife. Sharp. In your backpack.", 3)
         self.check_armed()
 
     def check_armed(self):
@@ -428,13 +427,10 @@ class ExtrasMixin:
         if best is None:
             return False
         t, attr, ctr = best
-        if self.mp_sim():
-            self.mon_stun[attr] = self.time + 1.0
-        else:
-            self.mp_tell('stun', m=attr)
+        self.stun_monster(attr)
         self.spawn_blood(ctr[0], ctr[1], ctr[2], 16, vel=(f[0] * 2, 1.5, f[2] * 2), spread=1.0)
         self.audio.play3d('goat_roar' if attr == 'goat' else 'call_near', ctr[0], ctr[2], 80, 0.8)
-        self.message("It staggers.", 1.5)
+        self.message("It staggers -- and backs off.", 2.0)
         return True
 
     # ================================================================== chapter 3

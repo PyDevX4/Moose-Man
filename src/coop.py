@@ -33,7 +33,7 @@ MONSTERS = {1: [('moose', 'moose'), ('chaser', 'moose')],
             2: [('goat', 'goat'), ('deer', None), ('chaser2', 'moose')],
             3: [('elk', 'elk')],
             4: [('moose4', 'moose4')],
-            5: [('beast', 'beast'), ('herd5', None)]}
+            5: [('beast', 'beast'), ('herd5', None), ('herdb', None)]}
 
 GATHER_NAMES = {'ladder': "the ladder", 'road': "the road", 'cabin': "the cabin", 'elevator': "the elevator",
                 'exit3': "the way out", 'exit4': "the second gate", 'factory': "the end of the drain",
@@ -195,7 +195,7 @@ class CoopMixin:
         return self.mp_on() and not self.mp.host
 
     def keys(self):
-        if self.block_input:
+        if self.block_input or getattr(self, 'inv_open', False):
             return _NoKeys()
         if self.fly_keys_blocked():
             return _NoMoveKeys(self._raw_keys())
@@ -487,12 +487,10 @@ class CoopMixin:
         m.net.send('t', d)
 
     def mp_item(self):
-        ch = self.chapter
-        if ch == 2:
-            return 'rifle' if self.has_rifle else 'lantern'
-        if ch == 5:
-            return 'shotgun' if self.has_shotgun else 'lantern'
-        return 'lantern'
+        g = self.held_gun()
+        if g in ('rifle', 'shotgun'):
+            return g
+        return 'lantern' if self.lantern_hand() else 'none'
 
     def mp_recv(self, kind, d, frm):
         m = self.mp
@@ -670,6 +668,9 @@ class CoopMixin:
         if attr == 'herd5':
             import herd5
             return herd5.Herd5(self.w5.fac, n=8)
+        if attr == 'herdb':
+            import herd5
+            return herd5.Herd5(self.w5.fac, n=0, world=self.w5)
         return None
 
     def mp_smooth_monsters(self, dt):
@@ -735,6 +736,9 @@ class CoopMixin:
         """(target, light_on). Whoever it's already after, if they're still about;
         otherwise whoever is closest. In single player, always you."""
         p = self.player
+        decoy = self.scared_target(attr)
+        if decoy is not None:
+            return (decoy, False)          # shot: it's off somewhere else, forgetting you
         mine = (p, self.flash_on and self.flicker_t <= 0)
         if not self.mp_on():
             return mine
@@ -762,6 +766,8 @@ class CoopMixin:
     # ---- caught
     def mp_caught(self, target, attr, kind=None):
         """A monster got someone."""
+        if getattr(target, 'pid', 0) is None and not hasattr(target, 'eye'):
+            return                         # the decoy: nobody was there
         if not self.mp_on():
             self.kill()
             return
@@ -1039,7 +1045,7 @@ class CoopMixin:
 
     # ---- chapter 5
     def act_herd_dmg(self, a, frm):
-        h = getattr(self, 'herd5', None)
+        h = getattr(self, a.get('h', 'herd5'), None)
         if self.mp_sim() and h is not None and frm is not None:
             h.damage(int(a['i']), float(a['amt']))
 

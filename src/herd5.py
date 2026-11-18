@@ -16,7 +16,7 @@ from engine import MeshBuilder, T, S, RX, RY, RZ
 from textures import L, EMIS
 from moose import unit_cube
 
-WANDER, CHASE, WIND, RECOVER, DEAD, FLINCH = range(6)
+WANDER, CHASE, WIND, RECOVER, DEAD, FLINCH, RISE = range(7)
 MAX_HP = 8.0
 SPEED_CHASE = 2.25          # you walk at 2.7: walk away and you keep your distance, just
 SPEED_WANDER = 0.75
@@ -63,7 +63,7 @@ def herd_meshes():
     }
 
 
-def pose_herd(x, z, yaw, walk=0.0, amt=0.0, reach=0.0, fall=0.0, t=0.0, seed=0, swing=0.0, flinch=0.0):
+def pose_herd(x, z, yaw, walk=0.0, amt=0.0, reach=0.0, fall=0.0, t=0.0, seed=0, swing=0.0, flinch=0.0, y=0.0):
     """One of them, as (mesh key, matrix) parts. fall: 0 standing .. 1 on its back."""
     rng = random.Random(seed)
     h = 0.92 + 0.16 * rng.random()
@@ -71,7 +71,7 @@ def pose_herd(x, z, yaw, walk=0.0, amt=0.0, reach=0.0, fall=0.0, t=0.0, seed=0, 
     out = []
     add = out.append
     fall_e = fall * fall * (3 - 2 * fall)
-    B = T(x, 0.12 * fall_e, z) @ RY(yaw) @ RX(-fall_e * math.pi / 2) @ S(h, h, h)
+    B = T(x, y + 0.12 * fall_e, z) @ RY(yaw) @ RX(-fall_e * math.pi / 2) @ S(h, h, h)
     sw = math.sin(walk) * 0.55 * amt * (1 - fall)
     # legs
     for sx, ph in ((-1, 1.0), (1, -1.0)):
@@ -102,10 +102,14 @@ def pose_herd(x, z, yaw, walk=0.0, amt=0.0, reach=0.0, fall=0.0, t=0.0, seed=0, 
 class Herd5:
     """All of them at once, so co-op can send them as a handful of short tuples."""
 
-    def __init__(self, fac, n=8, seed=5):
+    def __init__(self, fac, n=8, seed=5, world=None):
         self.fac = fac
+        self.world = world            # set: the open hall (no grid, no paths), not the factory
         self.n = n
         rng = random.Random(seed)
+        if world is not None or n == 0:
+            self._empty(rng)
+            return
         ex, ez = fac.center(57, 27)
         cells = [(c, r) for (c, r) in fac.floor_cells() if fac.g[r][c] == '.'
                  and math.hypot(fac.center(c, r)[0] - ex, fac.center(c, r)[1] - ez) > 22]
@@ -130,7 +134,43 @@ class Herd5:
                     'lost': [0.0] * n, 'goal': [None] * n, 'rng': rng}
         # everyone: what's drawn
         self._d = {'x': list(self.xs), 'z': list(self.zs), 'yaw': list(self.yaws), 'walk': [0.0] * n,
-                   'amt': [0.0] * n, 'fall': [0.0] * n, 'reach': [0.0] * n, 'swing': [0.0] * n, 'flinch': [0.0] * n}
+                   'amt': [0.0] * n, 'fall': [0.0] * n, 'reach': [0.0] * n, 'swing': [0.0] * n, 'flinch': [0.0] * n,
+                   'rise': [1.0] * n}
+
+    def _empty(self, rng):
+        self.n = 0
+        self.xs = self.zs = self.yaws = self.hps = self.st = ()
+        self.events = []
+        self._ai = {'t': [], 'path': [], 'repath': [], 'lost': [], 'goal': [], 'rng': rng}
+        self._d = {k: [] for k in ('x', 'z', 'yaw', 'walk', 'amt', 'fall', 'reach', 'swing', 'flinch', 'rise')}
+
+    def add(self, x, z):
+        """One more, clawing up out of the floor (host). Up to 16."""
+        if self.n >= 16:
+            return
+        ai = self._ai
+        self.xs += (round(x, 2),)
+        self.zs += (round(z, 2),)
+        self.yaws += (round(ai['rng'].random() * 6.28, 2),)
+        self.hps += (MAX_HP,)
+        self.st += (RISE,)
+        ai['t'].append(1.4)
+        ai['path'].append([])
+        ai['repath'].append(0.0)
+        ai['lost'].append(0.0)
+        ai['goal'].append(None)
+        self.n = len(self.xs)
+        self._fit()
+        self._d['rise'][-1] = 0.0
+        self.events.append(('rise', self.n - 1))
+
+    def _los(self, x0, z0, x1, z1):
+        return True if self.world is not None else self.fac.los(x0, z0, x1, z1)
+
+    def _collide(self, x, z):
+        if self.world is not None:
+            return self.world.collide(x, z, 0.35)
+        return self.fac.collide(x, z, 0.3)
 
     def alive(self, i):
         return i < len(self.st) and self.st[i] != DEAD
@@ -166,10 +206,14 @@ class Herd5:
         self.hps, self.st = tuple(hps), tuple(st)
 
     def walkable(self, x, z):
+        if self.world is not None:
+            return self.world.region(x, z) == 'hall'
         c, r = self.fac.cell_of(x, z)
         return self.fac.kind(c, r) == '.'
 
     def _path(self, i, x, z, tx, tz):
+        if self.world is not None:
+            return [(tx, tz)]
         fac = self.fac
         a, g = fac.cell_of(x, z), fac.cell_of(tx, tz)
         if fac.kind(*g) != '.':
@@ -197,11 +241,17 @@ class Herd5:
                 d = math.hypot(tx - x, tz - z)
                 if best is None or d < best[0]:
                     best = (d, tx, tz)
-            sees = best is not None and (best[0] < 4.0 or (best[0] < SEE and self.fac.los(x, z, best[1], best[2])))
+            sees = best is not None and (best[0] < 4.0 or (best[0] < SEE and self._los(x, z, best[1], best[2])))
+            if self.world is not None and best is not None:
+                sees = True               # out in the open hall: they always know where you are
             ai['t'][i] -= dt
             speed = 0.0
             goal = None
-            if s == FLINCH:
+            if s == RISE:
+                if ai['t'][i] <= 0:
+                    s = CHASE
+                    ai['lost'][i] = 0.0
+            elif s == FLINCH:
                 if ai['t'][i] <= 0:
                     s = CHASE if best else WANDER
             elif s == WIND:
@@ -221,7 +271,10 @@ class Herd5:
                 else:
                     if not ai['path'][i] or ai['t'][i] <= 0:
                         c, r = self.fac.cell_of(x, z)
-                        for _ in range(12):
+                        if self.world is not None:
+                            a_ = rng.random() * 6.28
+                            ai['path'][i] = [(x + math.cos(a_) * 6, z + math.sin(a_) * 6)]
+                        for _ in range(0 if self.world is not None else 12):
                             gc, gr = c + rng.randint(-8, 8), r + rng.randint(-8, 8)
                             if self.fac.kind(gc, gr) == '.':
                                 ai['path'][i] = self._path(i, x, z, *self.fac.center(gc, gr))
@@ -243,7 +296,7 @@ class Herd5:
                         self.events.append(('wind', i))
                     else:
                         speed = SPEED_CHASE * (0.8 + 0.35 * max(0.0, math.sin(ai['repath'][i] * 40 + x)))
-                        if sees and best[0] < 7.0:
+                        if sees and (best[0] < 7.0 or self.world is not None):
                             goal = (best[1], best[2])
                             ai['path'][i] = []
                         else:
@@ -266,7 +319,7 @@ class Herd5:
                         yaws[i] += dy * min(1.0, dt * 6)
                         step = min(d, speed * dt)
                         nx, nz = x + dx / d * step, z + dz / d * step
-                        nx, nz = self.fac.collide(nx, nz, 0.3)
+                        nx, nz = self._collide(nx, nz)
                         if self.walkable(nx, nz):
                             x, z = nx, nz
             # keep apart
@@ -329,6 +382,7 @@ class Herd5:
             d['reach'][i] += ((1.0 if s in (CHASE, WIND) else 0.0) - d['reach'][i]) * min(1.0, dt * 4)
             d['swing'][i] += ((1.0 if s == WIND else 0.0) - d['swing'][i]) * min(1.0, dt * (10 if s == WIND else 5))
             d['flinch'][i] += ((1.0 if s == FLINCH else 0.0) - d['flinch'][i]) * min(1.0, dt * 14)
+            d['rise'][i] = min(0.99 if s == RISE else 1.0, d['rise'][i] + dt / (1.3 if s == RISE else 0.3))
 
     def parts(self, t):
         self._fit()
@@ -336,7 +390,8 @@ class Herd5:
         out = []
         for i in range(min(self.n, len(self.xs))):
             out.append(pose_herd(d['x'][i], d['z'][i], d['yaw'][i], d['walk'][i], d['amt'][i], d['reach'][i] * (1 - d['swing'][i]),
-                                 d['fall'][i], t, seed=i * 7 + 3, swing=d['swing'][i], flinch=d['flinch'][i]))
+                                 d['fall'][i], t, seed=i * 7 + 3, swing=d['swing'][i], flinch=d['flinch'][i],
+                                 y=-1.9 * (1.0 - d['rise'][i]) ** 1.5))
         return out
 
     def hit_spheres(self, i):

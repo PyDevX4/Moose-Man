@@ -44,9 +44,11 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "The Herd: the people in the Ch1 holding room are dead now -- and in Ch5 they're walking.",
-    "Possessed, his eyes in their heads, they hunt you through the factory. Shoot them down.",
-    "Levers fixed: they start where they used to end up and turn a full 90 degrees.",
+    "BACKPACK [Tab]: left hand, right hand, head and bag -- drag your things where you want them.",
+    "You start with a revolver in the bag. It can't kill them, but it stuns them and scares them off.",
+    "Rifle and shotgun take both hands; the dead hunter in Ch5 has a headlamp. Your kit carries on chapter to chapter.",
+    "Quests are on [Q] now. A new Beast transformation. The Beast has twice the health,",
+    "smashes through anything that isn't a wall, and calls the Herd up out of the floor at half health.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

@@ -114,7 +114,7 @@ def pose_beast(x, z, yaw, phase=0.0, amt=0.0, slam=0.0, throw=0.0, jaw=0.3, roar
 
 # ---------------------------------------------------------------------- the beast, fighting
 class Beast:
-    MAX_HP = 640.0
+    MAX_HP = 1280.0
 
     def __init__(self, x, z, yaw):
         self.x, self.z, self.yaw = x, z, yaw
@@ -325,6 +325,23 @@ class World5:
         self.fac = factory5.FactoryLevel()
         self.booth_open = 0.0     # the admin booth's door
         self.east_gate = 0.0      # the gate he comes out of
+        self.props = []           # things in the hall The Beast smashes through: drawn on their own
+        self.smash_hits = set()   # props it ran into this frame
+
+    def _prop(self, pb, circles=(), boxes=()):
+        c = circles[0][:2] if circles else ((boxes[0][0] + boxes[0][2]) / 2, (boxes[0][1] + boxes[0][3]) / 2)
+        self.props.append({'data': pb.array(), 'circles': list(circles), 'boxes': list(boxes), 'broken': False,
+                           'c': c, 'size': max([r for _, _, r in circles] + [max(b[2] - b[0], b[3] - b[1]) / 2 for b in boxes])})
+
+    def reset_props(self):
+        for p in self.props:
+            p['broken'] = False
+        self.smash_hits = set()
+
+    def _props_solid(self):
+        for i, p in enumerate(self.props):
+            if not p['broken']:
+                yield i, p
 
     # ---- collision
     def region(self, x, z):
@@ -363,13 +380,26 @@ class World5:
                     z = min(z, HALL_Z1 - rad)
                 elif z > HALL_Z1 - rad:
                     x = clamp(x, -GATE_HW + rad, GATE_HW - rad)
-            for cx, cz, r in self.circles:
+            circles = list(self.circles)
+            pboxes = []
+            for i, pr in self._props_solid():
+                if big:
+                    for cx, cz, r in pr['circles']:
+                        if math.hypot(x - cx, z - cz) < r + rad:
+                            self.smash_hits.add(i)
+                    for x0, z0, x1, z1 in pr['boxes']:
+                        if math.hypot(x - clamp(x, x0, x1), z - clamp(z, z0, z1)) < rad:
+                            self.smash_hits.add(i)
+                else:
+                    circles += pr['circles']
+                    pboxes += pr['boxes']
+            for cx, cz, r in circles:
                 dx, dz = x - cx, z - cz
                 d = math.hypot(dx, dz)
                 if d < r + rad and d > 1e-6:
                     x = cx + dx / d * (r + rad)
                     z = cz + dz / d * (r + rad)
-            boxes = self.boxes
+            boxes = self.boxes + pboxes
             if self.booth_open < 0.8:
                 boxes = boxes + [(BOOTH[0] - 0.12, 46.4, BOOTH[0] + 0.12, 48.6)]
             for x0, z0, x1, z1 in boxes:
@@ -415,11 +445,12 @@ class World5:
             Nn = v[:, 3:6] @ M[:3, :3].T
             v[:, 0:3] = P[:, 0:3]
             v[:, 3:6] = Nn
-            b.add_array(v)
+            pb = MeshBuilder()
+            pb.add_array(v)
             if abs(math.sin(yaw)) < 0.5:
-                self.boxes.append((x - 1.25, z - 0.35, x + 1.25, z + 0.35))
+                self._prop(pb, boxes=[(x - 1.25, z - 0.35, x + 1.25, z + 0.35)])
             else:
-                self.boxes.append((x - 0.35, z - 1.25, x + 0.35, z + 1.25))
+                self._prop(pb, boxes=[(x - 0.35, z - 1.25, x + 0.35, z + 1.25)])
         x0, z0, x1, z1 = BOOTH
         b.add_array(F5.booth_mesh(x0, z0, x1, z1))
         self.boxes += [(x0, z1 - 0.12, x1, z1 + 0.12), (x0 - 0.12, z0, x0 + 0.12, 46.4), (x0 - 0.12, 48.6, x0 + 0.12, z1),
@@ -518,40 +549,45 @@ class World5:
         # steel columns and roof trusses
         for x in (-24.0, 24.0):
             for z in (64.0, 84.0, 104.0):
-                b.box((x, H / 2, z), (1.2, H, 1.2), L.METAL, (0.38, 0.35, 0.32))
-                b.box((x, 0.4, z), (2.0, 0.8, 2.0), L.CONCRETE, (0.5, 0.48, 0.45))
-                self.circles.append((x, z, 1.0))
+                pb = MeshBuilder()
+                pb.box((x, H / 2, z), (1.2, H, 1.2), L.METAL, (0.38, 0.35, 0.32))
+                pb.box((x, 0.4, z), (2.0, 0.8, 2.0), L.CONCRETE, (0.5, 0.48, 0.45))
+                self._prop(pb, circles=[(x, z, 1.0)])
         for z in range(52, 124, 12):
             b.box((0, H - 1.0, float(z)), (2 * X, 1.2, 0.6), L.METAL, (0.3, 0.28, 0.26))
             for k in range(-3, 4):
                 b.box((k * 11.0, H - 2.5, float(z)), (0.3, 2.5, 0.4), L.METAL, (0.3, 0.28, 0.26), m=None)
         # boilers in the corners
         for x, z in ((-32.0, 56.0), (32.0, 56.0), (-32.0, 112.0), (32.0, 112.0)):
-            b.cylinder(4.0, 4.0, 15.0, 16, L.METAL, (0.42, 0.36, 0.3), m=T(x, 0, z), cap=True)
+            pb = MeshBuilder()
+            pb.cylinder(4.0, 4.0, 15.0, 16, L.METAL, (0.42, 0.36, 0.3), m=T(x, 0, z), cap=True)
             for k in range(5):
-                b.cylinder(4.1, 4.1, 0.25, 16, L.METAL, (0.3, 0.27, 0.24), m=T(x, 1.0 + k * 3.2, z))
-            b.cylinder(0.6, 0.6, 15.0, 8, L.METAL, (0.33, 0.3, 0.27), m=T(x, 15.0, z))
+                pb.cylinder(4.1, 4.1, 0.25, 16, L.METAL, (0.3, 0.27, 0.24), m=T(x, 1.0 + k * 3.2, z))
+            pb.cylinder(0.6, 0.6, 15.0, 8, L.METAL, (0.33, 0.3, 0.27), m=T(x, 15.0, z))
             # a furnace door glowing at the bottom
             nx = 1.0 if x < 0 else -1.0
-            b.facing_quad((x + nx * 4.02, 1.4, z), (nx, 0, 0), 1.6, 1.3, L.GLOW + EMIS, (1.0, 0.3, 0.05))
+            pb.facing_quad((x + nx * 4.02, 1.4, z), (nx, 0, 0), 1.6, 1.3, L.GLOW + EMIS, (1.0, 0.3, 0.05))
             self.lights.append(((x + nx * 5.2, 1.6, z), 11.0, (1.2, 0.35, 0.08), 'fire'))
-            self.circles.append((x, z, 4.2))
+            self._prop(pb, circles=[(x, z, 4.2)])
         # machinery: presses, a conveyor, vats of something hot
         for (x, z, w, d, h) in ((16.0, 70.0, 6.0, 4.0, 7.0), (-16.0, 74.0, 5.0, 5.0, 5.0), (-28.0, 88.0, 4.0, 9.0, 3.5),
                                 (30.0, 96.0, 5.0, 4.0, 6.0)):
-            b.box((x, h / 2, z), (w, h, d), L.METAL, (0.4, 0.38, 0.33))
-            b.box((x, h + 0.3, z), (w * 0.6, 0.6, d * 0.6), L.METAL, (0.5, 0.42, 0.2))
-            b.box((x, 1.0, z + d / 2 + 0.02), (w * 0.8, 0.25, 0.04), L.METAL, (0.85, 0.68, 0.12))
-            self.boxes.append((x - w / 2, z - d / 2, x + w / 2, z + d / 2))
-        b.box((-13.0, 0.6, 102.0), (16.0, 1.2, 2.2), L.METAL, (0.35, 0.33, 0.3))         # conveyor
+            pb = MeshBuilder()
+            pb.box((x, h / 2, z), (w, h, d), L.METAL, (0.4, 0.38, 0.33))
+            pb.box((x, h + 0.3, z), (w * 0.6, 0.6, d * 0.6), L.METAL, (0.5, 0.42, 0.2))
+            pb.box((x, 1.0, z + d / 2 + 0.02), (w * 0.8, 0.25, 0.04), L.METAL, (0.85, 0.68, 0.12))
+            self._prop(pb, boxes=[(x - w / 2, z - d / 2, x + w / 2, z + d / 2)])
+        pb = MeshBuilder()
+        pb.box((-13.0, 0.6, 102.0), (16.0, 1.2, 2.2), L.METAL, (0.35, 0.33, 0.3))         # conveyor
         for k in range(16):
-            b.cylinder(0.12, 0.12, 2.2, 6, L.METAL, (0.5, 0.5, 0.5), m=T(-20.5 + k, 1.2, 101.0) @ RX(math.pi / 2))
-        self.boxes.append((-21.0, 100.9, -5.0, 103.1))
+            pb.cylinder(0.12, 0.12, 2.2, 6, L.METAL, (0.5, 0.5, 0.5), m=T(-20.5 + k, 1.2, 101.0) @ RX(math.pi / 2))
+        self._prop(pb, boxes=[(-21.0, 100.9, -5.0, 103.1)])
         for x in (-12.0, 12.0):
-            b.cylinder(2.6, 2.6, 3.0, 14, L.METAL, (0.35, 0.3, 0.27), m=T(x, 0, 116.0))
-            b.cylinder(2.3, 2.3, 0.05, 14, L.GLOW + EMIS, (1.0, 0.35, 0.06), m=T(x, 2.92, 116.0))
+            pb = MeshBuilder()
+            pb.cylinder(2.6, 2.6, 3.0, 14, L.METAL, (0.35, 0.3, 0.27), m=T(x, 0, 116.0))
+            pb.cylinder(2.3, 2.3, 0.05, 14, L.GLOW + EMIS, (1.0, 0.35, 0.06), m=T(x, 2.92, 116.0))
             self.lights.append(((x, 4.0, 116.0), 10.0, (1.1, 0.35, 0.08), 'fire'))
-            self.circles.append((x, 116.0, 2.8))
+            self._prop(pb, circles=[(x, 116.0, 2.8)])
         # catwalks along the walls, with chains and hooks hanging from the roof
         for sx in (-1, 1):
             x = sx * (X - 1.6)

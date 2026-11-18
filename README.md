@@ -47,10 +47,28 @@ python src/game.py
 | Mouse | Look |
 | Shift | Run (limited stamina) |
 | Ctrl / C | Crouch (quieter, harder to see) |
-| F | Lantern on/off |
+| F | Light on/off (the lantern in your hand, or the headlamp on your head) |
 | E | Read notes / interact. **Hold** to turn valves |
-| Tab | Show objective and notes found |
+| Left mouse | Fire the gun in your hands |
+| R | Reload |
+| Q | Show objective and notes found |
+| Tab | Backpack |
 | Esc | Pause |
+
+## The backpack
+
+**Tab** opens it. You have a **left hand**, a **right hand**, a **head**, and eight
+bag slots. Drag things between them (or tap one, then tap where it goes).
+
+- You start with the **lantern** in your left hand and a **revolver** in the bag.
+  The lantern and the revolver are one-handed. The **rifle** (Chapter 2) and the
+  **shotgun** (Chapter 5) take both hands.
+- No lantern in a hand means no light, unless you're wearing the **headlamp**.
+  It's on the dead hunter in Chapter 5, next to the shotgun.
+- You can't kill the Moose Man, the Goat Man or the Elk. A bullet stuns them for
+  a moment, and then they wander off and forget you for a while. Only The Beast
+  and the Herd can die.
+- Whatever you're carrying at the end of a chapter comes with you into the next.
 
 ## How to escape
 
@@ -157,8 +175,8 @@ in co-op.
 - **The hall is pitch black.** The key to the **admin booth** in the corner is on
   one of the shelves round the walls. In the booth there's a button.
 - The button opens the gate he comes out of. He drags out what's left of the Elk
-  and the Goat Man, they rise off the floor and **go into him**, and what stands
-  up is **The Beast**: three times his height, the Elk's crawling white body, the
+  and the Goat Man, all three of them rise and **wheel round each other** in the air,
+  tear apart limb from limb, and the pieces fly together into **The Beast**: three times his height, the Elk's crawling white body, the
   Moose Man rising out of its hump, and the Goat Man grown out of its flank.
 
 - **Left mouse** fires (six shells), and **R** reloads. Heads take the most
@@ -170,7 +188,11 @@ in co-op.
     mark);
   - it **charges** in a straight line. If it hits a wall it's **stunned** and
     takes extra damage;
-  - below half health it **brings the roof down**. Get off the red marks.
+  - below half health it **brings the roof down**. Get off the red marks;
+  - below half health it also **calls up the Herd** out of the floor to come for
+    you, and keeps calling them while there are only a few left;
+  - nothing in the hall stops it but the walls. Columns, boilers, presses and
+    shelves all **break** when it runs into them.
 - Kill it and the great gate opens. Walk out into the daylight.
 
 Checkpoints: the start of the chapter, and the start of the fight.

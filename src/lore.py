@@ -205,7 +205,7 @@ INTRO_TEXT = [
 
 CONTROLS_TEXT = [
     "WASD - move      MOUSE - look      SHIFT - run      CTRL / C - crouch",
-    "F - lantern      E - interact (hold to turn valves)      TAB - objective      ESC - pause",
+    "F - lantern      E - interact (hold to turn valves)      Q - objective      TAB - backpack      ESC - pause",
 ]
 
 CH2_WAKE_LINES = [

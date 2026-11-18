@@ -37,6 +37,9 @@ from coop import CoopMixin, PLAYISH
 from extras import ExtrasMixin
 from account import AccountMixin
 from ch5puzzle import Ch5PuzzleMixin
+from inventory import InventoryMixin
+from weapons import WeaponsMixin
+import inventory as INV
 
 TITLE = "Moose Man"
 
@@ -223,7 +226,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin):
+class Game(InventoryMixin, WeaponsMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin):
     def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -338,6 +341,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         self.m_bars = Mesh(self.ctx, prog, C2.window_bars_mesh())
         self.m_rifle = Mesh(self.ctx, prog, C2.rifle_mesh())
         self.m_knife = Mesh(self.ctx, prog, C2.knife_mesh())
+        self.m_revolver = Mesh(self.ctx, prog, INV.revolver_mesh())
+        self.m_headlamp = Mesh(self.ctx, prog, INV.headlamp_mesh())
         self.m_meat = Mesh(self.ctx, prog, C2.meat_mesh())
         for k, v in list(elk_meshes().items()) + list(C2.deer_meshes().items()):
             self.m_moose[k] = Mesh(self.ctx, prog, v)
@@ -615,9 +620,12 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
                 return 'text|pw' if self.login_sel == 1 else 'text|user'
             return 'menu'
         if st == 'play':
-            if self.chapter == 2 and self.has_rifle:
+            if getattr(self, 'inv_open', False):
+                return 'menu'
+            g = self.held_gun()
+            if g == 'rifle':
                 return 'play|gun|aim'
-            if self.chapter == 5 and self.has_shotgun:
+            if g in ('shotgun', 'revolver'):
                 return 'play|gun|reload'
             return 'play'
         if st in ('title', 'chapters', 'settings', 'pause', 'update', 'coop', 'lobby', 'note', 'dead', 'ending', 'intro'):
@@ -652,11 +660,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3',
                   'ch4open', 'exit4', 'card5', 'beastcs', 'exit5'):
             return
-        if st == 'play' and self.chapter == 5 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            self.fire_shotgun()
+        if st == 'play' and self.inv_event(ev):
             return
-        if st == 'play' and self.chapter == 2 and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            self.fire_rifle()
+        if st == 'play' and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.held_gun():
+            self.fire_weapon()
             return
         if ev.type in (pygame.WINDOWFOCUSLOST,) and st == 'play':
             self.pause()
@@ -692,12 +699,14 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
                 elif ev.key == pygame.K_f:
                     self.flash_on = not self.flash_on
                     self.audio.play('click', 0.6)
-                elif ev.key == pygame.K_TAB:
+                elif ev.key == pygame.K_q:
                     self.obj_t = 6.0
+                elif ev.key in (pygame.K_TAB, pygame.K_i):
+                    self.inv_toggle()
                 elif ev.key == pygame.K_e:
                     self.interact_press()
-                elif ev.key == pygame.K_r and self.chapter == 5:
-                    self.start_reload()
+                elif ev.key == pygame.K_r:
+                    self.reload_weapon()
             elif ev.type == pygame.MOUSEMOTION:
                 sens = 0.0022 * self.settings['sensitivity']
                 p = self.player
@@ -1154,7 +1163,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         self.update_cars(dt)
         c = self.chaser
         tgt = self.mp_ai_target(c, 'chaser')[0]
-        sim = self.mp_sim() and not self.mp_frozen('chaser')
+        sim = self.mp_sim() and not self.mp_frozen('chaser') and not self.stunned('chaser')
         g = float(W.terrain_h(c['x'], c['z']))
         if not sim:
             pass
@@ -1804,7 +1813,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
     def held_lantern_pos(self, cam, yaw, pitch):
         rx, rz = -math.cos(yaw), math.sin(yaw)
         fx, fz = math.sin(yaw), math.cos(yaw)
-        side = -0.36 if ((self.has_rifle or getattr(self, 'has_shotgun', False)) and self.state in ('play', 'beastcs')) else 0.36    # rifle in the right hand, lantern in the left
+        hand = self.lantern_hand()
+        if hand is None and self.headlamp_on():
+            return self.head_light_pos(cam, yaw, pitch)
+        side = 0.36 if hand == 'right' else -0.36
         return (cam[0] + rx * side + fx * 0.66, cam[1] - 0.66 + 0.18 * math.sin(pitch), cam[2] + rz * side + fz * 0.66)
 
     def begin_ch2(self):
@@ -1943,7 +1955,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         target = 1.45 if self.w2.door_open else 0.0
         self.door_angle += (target - self.door_angle) * min(1.0, dt * 6)
         # the rifle: right mouse aims down the scope
-        aiming = self.has_rifle and self.mouse_buttons()[2]
+        aiming = self.holding('rifle') and self.mouse_buttons()[2] and not getattr(self, 'inv_open', False)
         self.aim += ((1.0 if aiming else 0.0) - self.aim) * min(1.0, dt * 10)
         self.fire_cd = max(0.0, self.fire_cd - dt)
         self.muzzle_t = max(0.0, self.muzzle_t - dt)
@@ -2100,7 +2112,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         elif kind == 'rifle':
             self.has_rifle = True
             self.audio.play('bolt', 0.8)
-            self.message("Your father's .30-06. A hit will stop anything for a second.", 4)
+            self.message("Your father's .30-06 -- it's in your backpack. [Tab] to take it out (two hands).", 5)
             self.check_armed()
         elif kind == 'deer' and not self.has_knife:
             self.message("You need the knife. It's on the table in the cabin.", 3)
@@ -2119,7 +2131,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
         self.set_resume(2, 'wood20')        # Chapter Two checkpoint: the woodpile is full
 
     def fire_rifle(self):
-        if not self.has_rifle or self.fire_cd > 0 or self.state != 'play':
+        if not self.holding('rifle') or self.fire_cd > 0 or self.state != 'play':
             return
         p = self.player
         self.fire_cd = 1.5
@@ -2618,8 +2630,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             _, yaw, pitch = hold
             lp = self.held_lantern_pos(cam, yaw, pitch)
             M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
-            r.draw(self.m_lantern, model=M)
-            r.draw(self.m_lantern_lit if lantern_lit else self.m_lantern_off, model=M)
+            if self.lantern_hand():
+                r.draw(self.m_lantern, model=M)
+                r.draw(self.m_lantern_lit if lantern_lit else self.m_lantern_off, model=M)
+            self.draw_hand_items(r, cam, yaw, pitch)
         for pl in parts:
             for key, M in pl:
                 r.draw(self.m_moose[key], model=M)
@@ -2653,7 +2667,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             parts.append(self.chaser2_parts())
         extras = []
         fov = None
-        if self.has_rifle:
+        if self.holding('rifle'):
             # the rifle: at the hip, or up at the eye looking down the scope
             yaw, pitch = p.yaw, p.pitch
             right = (-math.cos(yaw), 0.0, math.sin(yaw))
@@ -3038,7 +3052,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             self.audio.loop('breath', 0)
             return
         tgt, lit = self.mp_ai_target(e, 'elk')
-        if self.mp_sim() and not self.mp_frozen('elk'):
+        if self.mp_sim() and not self.mp_frozen('elk') and not self.stunned('elk'):
             e.update(dt, tgt, lit)
         for ev in self.mp_events('elk', e):
             if ev == 'step':
@@ -3292,8 +3306,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             _, yaw, pitch = hold
             lp = self.held_lantern_pos(cam, yaw, pitch)
             M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
-            r.draw(self.m_lantern, model=M)
-            r.draw(self.m_lantern_lit if (self.flash_on or self.state != 'play') else self.m_lantern_off, model=M)
+            if self.lantern_hand():
+                r.draw(self.m_lantern, model=M)
+                r.draw(self.m_lantern_lit if (self.flash_on or self.state != 'play') else self.m_lantern_off, model=M)
+            self.draw_hand_items(r, cam, yaw, pitch)
         if blizzard > 0 or outside_t > 0:
             self.draw_blizzard(cam, max(blizzard, outside_t))
 
@@ -3351,6 +3367,9 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
     # ------------------------------------------------------------------ update
     def update(self, dt):
         self.mp_update(dt)
+        self.inv_tick()
+        if getattr(self, 'inv_open', False) and self.state != 'play':
+            self.inv_open = False
         self.update_login(dt)
         if self.admin_open and not self.mp_on():
             return
@@ -3379,6 +3398,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
                 self.start_play()
         elif st == 'play':
             self.admin_fly(dt)
+            self.weapons_tick(dt)
             self.update_play(dt)
             self.admin_fly_after()
         elif st == 'climb':
@@ -3780,7 +3800,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             self.audio.loop('breath', 0)
             return
         tgt, lit = self.mp_ai_target(m, 'moose')
-        if self.mp_sim() and not self.mp_frozen('moose'):
+        if self.mp_sim() and not self.mp_frozen('moose') and not self.stunned('moose'):
             m.update(dt, tgt, lit)
         for ev in self.mp_events('moose', m):
             if ev == 'step':
@@ -3893,8 +3913,10 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             _, yaw, pitch = hold
             lp = self.held_lantern_pos(cam, yaw, pitch)
             M = T(*lp) @ RY(yaw) @ RZ(0.05 * math.sin(self.time * 2.1))
-            r.draw(self.m_lantern, model=M)
-            r.draw(self.m_lantern_lit if self.flash_on else self.m_lantern_off, model=M)
+            if self.lantern_hand():
+                r.draw(self.m_lantern, model=M)
+                r.draw(self.m_lantern_lit if self.flash_on else self.m_lantern_off, model=M)
+            self.draw_hand_items(r, cam, yaw, pitch)
 
     def post_params(self, extra=None):
         p = {'grain': 1.0 if self.settings['grain'] else 0.0, 'vhs': 1.0 if self.settings['vhs'] else 0.0,
@@ -4370,7 +4392,7 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             self.blit_text(txt, self.f_msg, (225, 215, 200), (cx, y), 'midtop', alpha=a)
             y -= 30
         if self.chapter == 2:
-            if self.has_rifle and self.aim > 0.55:
+            if self.holding('rifle') and self.aim > 0.55:
                 # looking down the scope: everything but the circle goes black
                 sc = pygame.Surface((self.UW, self.UH), pygame.SRCALPHA)
                 sc.fill((0, 0, 0, int(255 * min(1.0, (self.aim - 0.55) / 0.3))))
@@ -4423,6 +4445,8 @@ class Game(CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mi
             self.blit_text(self.objective, self.f_small, (210, 200, 185), (26, 56), alpha=a)
             n = sum(1 for nn in self.world.notes.values() if nn['read'])
             self.blit_text("notes found: %d/%d" % (n, len(lore.NOTES)), self.f_small, (150, 145, 135), (26, 76), alpha=a)
+        self.draw_weapon_hud()
+        self.draw_inventory()
 
     def draw_note(self):
         title, style, text = lore.NOTES[self.note_id]
