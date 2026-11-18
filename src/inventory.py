@@ -35,8 +35,9 @@ SCARE_T = 7.0         # then it goes off somewhere else and forgets you
 MENUS = ('title', 'chapters', 'settings', 'update', 'coop', 'coopname', 'coopjoin', 'lobby', 'login', 'ending')
 
 
-# the Elk takes these off you at the end of Chapter Three: gone from Chapter Four on
-LOST_AFTER_CH3 = ('rifle', 'revolver')
+# what you no longer have from a chapter on: the knife stays by the deer in Chapter Two,
+# and the Elk takes both guns at the end of Chapter Three
+LOST_FROM = {3: ('knife',), 4: ('knife', 'rifle', 'revolver')}
 
 
 def default_kit(ch):
@@ -49,12 +50,13 @@ def default_kit(ch):
 
 
 def strip_lost(inv, ch):
-    if inv is None or ch < 4:
+    lost = LOST_FROM.get(min(ch, 4)) if ch >= 3 else None
+    if inv is None or not lost:
         return inv
     for k in ('left', 'right', 'head'):
-        if inv[k] in LOST_AFTER_CH3:
+        if inv[k] in lost:
             inv[k] = None
-    inv['bag'] = [None if i in LOST_AFTER_CH3 else i for i in inv['bag']]
+    inv['bag'] = [None if i in lost else i for i in inv['bag']]
     if inv['left'] is None and inv['right'] is None and 'lantern' in inv['bag']:
         inv['bag'][inv['bag'].index('lantern')] = None
         inv['left'] = 'lantern'

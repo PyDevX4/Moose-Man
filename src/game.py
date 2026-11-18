@@ -2209,6 +2209,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.spawn_blood(tgt[0], tgt[1] + 0.1, tgt[2], 4, vel=(0.0, 1.2, 0.0), spread=0.6)
         if self.butcher_fire('meat', 6.2):
             self.audio.play('wood_pick', 0.6)
+            # the knife stays in the snow by the deer: you don't have it from here on
+            self.inv_lose('knife')
+            self.message("Your hands are shaking. You drop the knife in the snow.", 2.6)
         if self.butcher_fire('wrap', 7.8):
             self.has_meat = True
             self.message("You wrap the meat in your coat.", 3.5)
@@ -2234,6 +2237,10 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             stroke = math.sin(t * 5.0) * 0.18
             kp = (tgt[0] + ax * stroke, tgt[1] + 0.22 + 0.05 * abs(math.cos(t * 5.0)), tgt[2] + az * stroke)
             extras.append((self.m_knife, T(*kp) @ RY(dr.yaw) @ RX(0.9)))
+        else:
+            ax, az = math.sin(dr.yaw), math.cos(dr.yaw)
+            kp = (tgt[0] + (cam[0] - tgt[0]) * 0.45 + ax * 0.25, tgt[1] - 0.3, tgt[2] + (cam[2] - tgt[2]) * 0.45 + az * 0.25)
+            extras.append((self.m_knife, T(*kp) @ RY(dr.yaw + 0.7) @ RZ(math.pi / 2)))
         # the meat, piled by your knee, then gone into your coat
         if 6.2 <= t < 7.8:
             for k in range(3):

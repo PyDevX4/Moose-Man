@@ -44,10 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Chapter Three has a new ending: the Elk catches you at the mouth of the old adit.",
-    "It costs you the rifle and the revolver -- you start Chapter Four without them.",
-    "The way out of the mine is now an old cage lift going up, not a white wall.",
-    "The Ch3 elevator floor now goes down with you. The Moose Man is centred in the Ch4 opening.",
+    "Chapter Two: you drop the knife in the snow after skinning the deer. No knife from Chapter Three on.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

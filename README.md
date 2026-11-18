@@ -135,6 +135,8 @@ When you wake, something white is crawling toward it.
   **Find the old way out of the mine.** There's a cage lift at the end of the
   old adit -- but the Elk is waiting at the mouth of it, and getting past costs
   you both guns. From Chapter Four on you have no rifle and no revolver.
+  (The knife is already gone: you drop it in the snow after skinning the deer
+  in Chapter Two.)
 
 Checkpoints: the start of the chapter, and the bottom of the elevator.
 
