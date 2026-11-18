@@ -44,7 +44,9 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Fixed: Cabin Defense no longer snows inside the cabin.",
+    "Chapter 1: past the key gate, a long tunnel and a drop shaft. Find the plank, lay it over the gap, and keep your balance with A and D.",
+    "Chapter 3: the cart lever snaps, so find its generator. The rails now end in the Herd's caves: find dynamite, wire and a detonator, and blow a way through.",
+    "Chapter 4: the three generators are somewhere new every game, and they need gas. The first section is bigger, and reaches the bottom of the drop shaft.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

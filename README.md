@@ -78,8 +78,14 @@ bag slots. Drag things between them (or tap one, then tap where it goes).
 - The drain leads down into Overflow System C. **He is down there.**
 - Chamber C is flooded. Open the **five relief valves** hidden around the
   system to drain it. Past the drained chamber are the old works, a hall and
-  a maze of rooms. **Search them for the key** to the gate in front of the service
-  ladder.
+  a maze of rooms. **Search them for the key** to the locked gate at the end of
+  the chamber.
+- Past the gate is a long tunnel, and then a **drop shaft**: a huge room with
+  water pouring down into it from pipes on every side. A catwalk crosses it high
+  up, but its middle has fallen in. Find the **long plank** (it's somewhere in
+  the sewer rooms, and you can't run while you carry it), lay it over the gap,
+  and walk across it **slowly**. Keep your balance with **A** and **D**: tip too
+  far and you fall. The ladder up is on the far side.
 - Turning a valve makes noise. He hears footsteps, running, splashing, and
   valves. He sees your lantern from far off. With it off he can still see you
   **moving**, from closer in. Light off and standing still, he can't see you at
@@ -132,8 +138,18 @@ When you wake, something white is crawling toward it.
 - With all three pulled, the generator starts and the lights come on. Take the
   **elevator** down from beside the mine office.
 - At the bottom, the rails lead into a boarded-up tunnel. Find the lever that
-  powers the **minecart**, get in, and **hold W** to drive it through the boards.
-- Past them you'll find what's left of the Goat Man. Then it follows you down.
+  powers the **minecart**. It snaps off in your hand, so find the **generator** it
+  was meant to start and pull its cord (hold **E**). Then get in the cart and
+  **hold W** to drive it through the boards.
+- The rails end in **the Herd's caves**. They stand asleep on their feet in the
+  dark. Get too close, or run or walk near them without crouching, and they
+  wake (and wake the ones nearby). Two hits from them and you're dead. A gunshot
+  wakes everything near it.
+- Find the **dynamite**, the **wire** and the **detonator**. Pack the dynamite into
+  the rock wall at the end of the old drift, wire it up, walk the wire back at
+  least 14 m, set the detonator down and push the plunger. Run through the hole
+  before they get you. They won't follow you through it.
+- Past the wall you'll find what's left of the Goat Man. Then the Elk follows you down.
   **Find the old way out of the mine.** There's a cage lift at the end of the
   old adit -- but the Elk is waiting at the mouth of it, and getting past costs
   you both guns. From Chapter Four on you have no rifle and no revolver.
@@ -148,8 +164,12 @@ Checkpoints: the start of the chapter, and the bottom of the elevator.
 the dark and starts to **change**: bigger, heavier, both antlers grown back.
 He smashes the floor and you both fall into a far bigger sewer underneath.
 
-- Start the **three backup generators** (hold **E** on the starter cord). It's
-  loud. Each one lights its own tunnels.
+- Start the **three backup generators**. They're somewhere different every
+  game, and they're **dry**: find the **gas can**, pour gas into each one (hold
+  **E**), then pull its starter cord (hold **E**). It's loud. Each one you start
+  brings more of the lights on.
+- The first section is bigger now. It reaches the bottom of the **drop shaft**
+  from Chapter One, and the plank you laid is still up there.
 - With all three running, the first big gate opens onto a **huge hall**.
 - Find **five fuses** in the sewers around the hall and put them in the fuse
   box beside the second gate, which is even bigger. Then go through.
@@ -291,8 +311,10 @@ copied into yours. Guests save only on their own device. It uses a `mooseman_sav
 The maps are about **half again** as big as they used to be: the Chapter 1 sewers,
 the Chapter 2 forest, the Chapter 3 caves and mine, and the Chapter 4 deep
 sewer. And the puzzle pieces are somewhere new **every time you play**: the
-valves, the flood levers and the ladder key in Chapter 1, the firewood in
-Chapter 2, the levers in Chapter 3, the fuses in Chapter 4, and the code, the
+valves, the flood levers, the gate key and the plank in Chapter 1, the firewood in
+Chapter 2, the levers, the cart's generator, the dynamite, wire and detonator and
+where the Herd stands in Chapter 3, the generators, the gas can and the fuses
+in Chapter 4, and the code, the
 papers, the switches and the key in Chapter 5. In co-op the host's game
 decides, so everyone gets the same layout.
 

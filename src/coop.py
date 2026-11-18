@@ -31,7 +31,7 @@ KILL_T = 2.4
 # monsters each chapter syncs (attribute names on the Game), and what kind of thing they are
 MONSTERS = {1: [('moose', 'moose'), ('chaser', 'moose')],
             2: [('goat', 'goat'), ('deer', None), ('chaser2', 'moose')],
-            3: [('elk', 'elk')],
+            3: [('elk', 'elk'), ('herd3', None)],
             4: [('moose4', 'moose4')],
             5: [('beast', 'beast'), ('herd5', None), ('herdb', None)]}
 
@@ -668,6 +668,9 @@ class CoopMixin:
         if attr == 'herd5':
             import herd5
             return herd5.Herd5(self.w5.fac, n=8)
+        if attr == 'herd3':
+            import puzzles2
+            return puzzles2.Herd3(self.lv_low)
         if attr == 'herdb':
             import herd5
             return herd5.Herd5(self.w5.fac, n=0, world=self.w5)
@@ -1015,7 +1018,7 @@ class CoopMixin:
         lev['progress'] = 1.0
         self.audio.play('clunk', 1.0 if frm is None else 0.6)
         if lv is self.lv_low:
-            self.ch3_low_lever_done()
+            self.lever_snapped(frm)
             return
         n = sum(1 for x in lv.levers if x['pulled'])
         k = len(lv.levers)

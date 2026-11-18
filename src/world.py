@@ -19,7 +19,15 @@ PATH_PTS = [(0, -62), (0, -48), (4, -30), (-3, -15), (5, 0), (2, 15), (-4, 28), 
 CAMPFIRE = (9.0, 8.0)
 # the two flood-gate release levers out in the woods (x, z, yaw the handle faces)
 C1_LEVERS = [(-23.0, 24.0, math.pi / 2), (21.0, -9.0, -math.pi / 2)]
-KEYGATE = (19, 48)                  # the ladder shaft cell; its gate is on the south edge
+KEYGATE = (32, 48)                  # the gate into the long tunnel; it sits on this cell's south edge
+# past the gate: a long tunnel, the drop shaft (crossed on a catwalk with a gap in it), and the ladder
+SHAFT = (58, 55, 71, 69)            # the shaft's cells (c0, r0, c1, r1)
+CAT_ROW = 62                        # the catwalk runs along this row, west to east
+GAP = (63, 65)                      # the columns where it has fallen out
+SHAFT_FLOOR = -27.0
+SHAFT_TOP = 6.0
+LADDER = (74, 63)                   # the ladder up, on the far side
+CAT_Y = -5.0
 START = (0.0, -50.0)
 
 # ---- the escape: a manhole in the eastern woods, and Route 9 beyond it
@@ -162,7 +170,14 @@ class World:
         for c in (18, 19, 20):
             for r in (41, 42, 44, 45):
                 g[r][c] = 'S'
-        carve(19, 48, 19, 48, 'X')
+        # ---- through the gate: the long tunnel, the drop shaft, the ladder on the far side
+        carve(32, 48, 32, 49, 'H')
+        carve(33, 49, 56, 49, 'H')
+        carve(56, 50, 56, 62, 'H')
+        carve(57, 62, 57, 62, 'H')
+        carve(*SHAFT, 'P')
+        carve(SHAFT[2] + 1, CAT_ROW, LADDER[0], CAT_ROW, 'H')
+        carve(LADDER[0], LADDER[1], LADDER[0], LADDER[1], 'X')
         # ---- east of the pump room: the filter room
         carve(35, 14, 35, 14)
         carve(36, 11, 44, 18)
@@ -190,7 +205,9 @@ class World:
         # The flooded basin is a barrier, so nothing new is a way round draining it.
         from gridgrow import grow
         keep = {(c, r) for r in range(0, 21) for c in range(0, 20)}            # the storm drain and junction
-        keep |= {(c, r) for r in range(44, 52) for c in range(16, 24)}         # around the ladder shaft
+        keep |= {(c, r) for r in range(44, 52) for c in range(16, 24)}         # where the ladder used to be
+        far = [(c, r) for r in range(ROWS) for c in range(COLS) if g[r][c] in 'HPX']
+        keep |= {(c + dc, r + dr) for (c, r) in far for dc in (-1, 0, 1) for dr in (-1, 0, 1)}
         self.grown = grow(g, random.Random(4417), factor=1.5, passable='.~tWSX', connect_to='.',
                           room_kinds='.', barrier='WS', bounds=(1, 1, COLS - 2, ROWS - 2), room_w=(3, 9),
                           room_h=(3, 8), keep_out=keep, tries=40000)
@@ -210,7 +227,14 @@ class World:
                     self.basin[r, c] = True
         for (c0, r0, c1, r1), h in (((2, 22, 37, 26), 0.0), ((15, 31, 25, 37), -1.6), ((6, 39, 32, 47), 1.0)):
             ce[r0:r1 + 1, c0:c1 + 1] = h
-        ce[48, 19] = 6.0
+        for r in range(ROWS):
+            for c in range(COLS):
+                if g[r][c] == 'H':
+                    ce[r, c] = -1.4
+                elif g[r][c] == 'P':
+                    fl[r, c] = SHAFT_FLOOR
+                    ce[r, c] = SHAFT_TOP
+        ce[LADDER[1], LADDER[0]] = 6.0
         for c in (18, 19, 20):
             self.stairs[(c, 41)] = (-5.0, -6.5)
             self.stairs[(c, 42)] = (-6.5, -8.0)
@@ -258,8 +282,20 @@ class World:
             return min(st)
         return float(self.floor[r, c])
 
+    plank_down = False
+
+    def shaft_floor(self, x, z):
+        """In the drop shaft: the catwalk (and the plank, once it's down), or a long way down."""
+        zc = cell_center(0, CAT_ROW)[1]
+        gx0, gx1 = OX + GAP[0] * C, OX + (GAP[1] + 1) * C
+        if gx0 <= x <= gx1:
+            return CAT_Y if (self.plank_down and abs(z - zc) <= 0.45) else SHAFT_FLOOR
+        return CAT_Y if abs(z - zc) <= 0.8 else SHAFT_FLOOR
+
     def floor_at(self, x, z):
         c, r = cell_of(x, z)
+        if 0 <= r < ROWS and 0 <= c < COLS and self.g[r][c] == 'P':
+            return self.shaft_floor(x, z)
         if 0 <= r < ROWS and 0 <= c < COLS and self.g[r][c] != '#':
             return self.floor_cell(c, r, z)
         return None
@@ -286,12 +322,14 @@ class World:
     def water_depth_block(self, c, r):
         return self.basin[r, c] and not self.drained
 
-    def cell_blocked(self, c, r, y, px, pz):
+    def cell_blocked(self, c, r, y, px, pz, mon=False):
         if r < 0:
             return False
         if r >= ROWS or c < 0 or c >= COLS:
             return True
         if self.g[r][c] == '#':
+            return True
+        if mon and self.g[r][c] in 'HPX':
             return True
         if self.basin[r, c] and not self.drained:
             return True
@@ -299,14 +337,14 @@ class World:
         cz = clamp(pz, z0, z0 + C)
         return self.floor_cell(c, r, cz) > y + STEP
 
-    def collide(self, x, z, rad, y, forest=True):
+    def collide(self, x, z, rad, y, forest=True, mon=False):
         hit_water = False
         for _ in range(3):
             c0, r0 = cell_of(x - rad, z - rad)
             c1, r1 = cell_of(x + rad, z + rad)
             for r in range(r0, r1 + 1):
                 for c in range(c0, c1 + 1):
-                    if self.cell_blocked(c, r, y, x, z):
+                    if self.cell_blocked(c, r, y, x, z, mon):
                         if 0 <= r < ROWS and 0 <= c < COLS and self.basin[r, c] and not self.drained:
                             hit_water = True
                         x0 = OX + c * C
@@ -369,7 +407,7 @@ class World:
 
     def passable(self, a, b, side):
         c, r = b
-        if self.kind(c, r) == '#':
+        if self.kind(c, r) in '#HPX':
             return False
         if self.basin[r, c] and not self.drained:
             return False
@@ -1173,7 +1211,7 @@ class World:
         for s in (-1, 1):
             b.box((s * 0.3, 0, 0.1), (0.08, 0.08, 0.6), L.SKIN, (0.8, 0.8, 0.75), m=m @ RY(s * 0.4))
         # exit shaft & ladder
-        lx, lz = cc(19, 48)
+        lx, lz = cc(*LADDER)
         for s in (-0.25, 0.25):
             b.box((lx + s, 0.5, lz + 0.85), (0.06, 11.0, 0.06), L.METAL)
         y = -4.7
@@ -1185,9 +1223,44 @@ class World:
         self.ladder_pos = (lx, -3.6, lz + 0.6)
         self.decal(b, 17, 47, 'N', L.G_ONEMORE, 2.0, 2.0, -2.8)
         self._north_props(b, rng)
+        self._shaft_props(b)
         self.decal(b, 21, 47, 'N', L.HAND, 0.5, 0.5, -3.7)
         self.decal(b, 21, 47, 'N', L.HAND, 0.5, 0.5, -3.3, along=0.5)
         self.drip_points += [cc(10, 42), cc(25, 44), cc(15, 46)]
+
+    def _shaft_props(self, b):
+        """The long tunnel past the gate, and the drop shaft."""
+        import shaft
+        cc = cell_center
+        # bulbs down the tunnel, most of them dead
+        for (c, r) in ((32, 49), (39, 49), (46, 49), (53, 49), (56, 54), (56, 59), (73, 62)):
+            x, z = cc(c, r)
+            self.bulb(b, x, -2.0, z, float(self.ceil[r, c]), colr=(0.9, 0.5, 0.22), rad=7.0,
+                      flicker='bad' if (c + r) % 3 == 0 else 'soft')
+        # a trickle of black water down the middle of it
+        for (c, r) in [(c, 49) for c in range(32, 57)]:
+            x, z = cc(c, r)
+            b.quad_world((x - 1.0, -4.985, z - 0.3), (x + 1.0, -4.985, z - 0.3), (x + 1.0, -4.985, z + 0.3),
+                         (x - 1.0, -4.985, z + 0.3), L.WATER, (0.7, 0.75, 0.7), 0.5)
+        self.decal(b, 40, 49, 'N', L.SIGN, 0.9, 0.5, -3.2)
+        self.decal(b, 56, 57, 'E', L.HAND, 0.5, 0.5, -3.6)
+        c0, r0, c1, r1 = SHAFT
+        x0, z0 = OX + c0 * C, OZ + r0 * C
+        x1, z1 = OX + (c1 + 1) * C, OZ + (r1 + 1) * C
+        zc = cc(0, CAT_ROW)[1]
+        gx0, gx1 = OX + GAP[0] * C, OX + (GAP[1] + 1) * C
+        lights = shaft.dress(b, x0, z0, x1, z1, SHAFT_FLOOR, SHAFT_TOP, CAT_Y, zc, gx0, gx1, (), random.Random(5858))
+        for (x, y, z, kind) in lights:
+            if kind == 'cat':
+                self.bulb(b, x, y, z, SHAFT_TOP, colr=(0.55, 0.62, 0.75), rad=11.0, flicker='soft')
+            else:
+                self.lights.append({'pos': (x, y, z), 'rad': 17.0, 'col': (1.0, 0.42, 0.2), 'flicker': 'soft'})
+        # light coming up off the water at the bottom, so you can see how far down it goes
+        self.lights.append({'pos': ((x0 + x1) / 2, SHAFT_FLOOR + 5.0, (z0 + z1) / 2), 'rad': 24.0,
+                            'col': (0.35, 0.48, 0.6), 'flicker': 'none'})
+        self.shaft_box = (x0, z0, x1, z1)
+        self.cat_z = zc
+        self.gap_x = (gx0, gx1)
 
     def _north_props(self, b, rng):
         """The rooms added later: the filter room, flooded storage, and the old works past the chamber."""

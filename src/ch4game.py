@@ -397,8 +397,8 @@ class Ch4Mixin:
             m.go_to(*lv.center(39, 6))
             m.grace = 10.0
             self.moose4 = m
-            self.set_objective("Turn on the three backup generators. (0/3)")
-            self.message("Three generators. The big gate needs power.", 4)
+            self.set_objective("Find gas, and start the three backup generators. (0/3)")
+            self.message("Three generators somewhere down here. The big gate needs power.", 4)
         else:
             sx, sz = lv.center(21, 21)
             p.reset(sx, lv.y0, sz, 0.0)
@@ -517,6 +517,8 @@ class Ch4Mixin:
                 d = math.hypot(gen['pos'][0] - p.x, gen['pos'][2] - p.z)
                 if best is None or d < best[0]:
                     best = (d, gen)
+                continue
+            if self.gen_fuel_tick(i, gen, keys, dt):
                 continue
             if self.focus == ('generator', i) and keys[pygame.K_e]:
                 pulling = True
@@ -686,6 +688,9 @@ class Ch4Mixin:
                 cands.append(('fuse', i, fu['pos'], 2.3))
         if lv.fusebox:
             cands.append(('fusebox', 0, lv.fusebox['pos'], 2.4))
+        if lv.jug and not lv.jug['taken']:
+            x, y, z = lv.jug['pos']
+            cands.append(('jug4', 0, (x, y + 0.3, z), 2.3))
         best, bestd = None, -1
         for kind, key, pos, rng in cands:
             dx, dy, dz = pos[0] - ex, pos[1] - ey, pos[2] - ez
@@ -701,6 +706,9 @@ class Ch4Mixin:
             return
         kind, key = self.focus
         lv = self.lv
+        if kind == 'jug4':
+            self.mp_act('jug4')
+            return
         if kind == 'fuse':
             fu = lv.fuses[key]
             fu['taken'] = True
@@ -818,7 +826,7 @@ class Ch4Mixin:
             return self.gens_running() >= 3
         if g == 'hall':
             return lv.gates['G']['opening']
-        return lv.generators[g]['running']
+        return self.gens_running() > g          # each one you start brings more of the lamps on
 
     def draw_world4(self, cam, fwd, lights, parts=(), extras=(), hold=None, fov=None):
         r = self.r
@@ -846,11 +854,15 @@ class Ch4Mixin:
         all_lights += [c[1] for c in cand]
         hall = cam[2] > lv.oz + 39.0
         env = HALL_ENV if (hall and lv.gates['G']['opening']) else SEWER_ENV
+        sc = lv.cell_of(cam[0], cam[2])
+        if C4.inside(C4.SHAFT4, *sc):
+            env = dict(env, fogdens=0.018, ambient=(0.03, 0.032, 0.036))     # the shaft: you can see up it
         r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, 0.0, cam, fwd, all_lights[:8])
         r.draw(self.m_ch4)
         for (x, y, z, g) in lv.bulbs:
             if self.light_on({'gen': g}):
                 r.draw(self.m_bulb, model=T(x, y, z) @ S(0.09, 0.14, 0.09))
+        self.draw_p2_c4(r)
         for gen in lv.generators:
             x, y, z = gen['lamp']
             vib = 0.004 * math.sin(self.time * 90) if gen['running'] else 0.0
@@ -929,7 +941,8 @@ class Ch4Mixin:
     def hud_ch4(self):
         lv = self.lv4
         if not lv.gates['G']['opening']:
-            return "GENERATORS %d/3" % self.gens_running()
+            gas = ("GAS %d/3" % self.jug_left) if (lv.jug and lv.jug['taken']) else "GAS  - ?"
+            return "GENERATORS %d/3    %s" % (self.gens_running(), gas)
         if not self.in_hall:
             return "THE GATE IS OPEN"
         if lv.gates['H']['opening']:
@@ -938,7 +951,9 @@ class Ch4Mixin:
 
     def focus_label_ch4(self, kind, key):
         if kind == 'generator':
-            return "[Hold E] Pull the starter cord", self.lv4.generators[key]['progress']
+            return self.ch4_label_gen(key)
+        if kind == 'jug4':
+            return "[E] Take the gas can", 0.0
         if kind == 'fuse':
             return "[E] Take the fuse", 0.0
         if kind == 'fusebox':

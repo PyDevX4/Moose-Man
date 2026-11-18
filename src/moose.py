@@ -633,7 +633,7 @@ class Moose:
                 step = min(md, speed * dt)
                 nx = self.x + mx / md * step
                 nz = self.z + mz / md * step
-                nx, nz, _ = self.w.collide(nx, nz, 0.38, self.y, forest=False)
+                nx, nz, _ = self.w.collide(nx, nz, 0.38, self.y, forest=False, mon=True)
                 moved = math.hypot(nx - self.x, nz - self.z)
                 self.x, self.z = nx, nz
                 self.yaw = self._turn(self.yaw, math.atan2(mx, mz), dt * (7 if st == 'chase' else 3.5))

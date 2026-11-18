@@ -8,6 +8,7 @@ Cells are 2 m. Kinds:
   '#' rock      '.' cavern (huge, the Elk fits)      'M' cave mouth tunnel (Elk fits)
   ',' mineshaft (narrow and timbered: the Elk is too big to follow you in)
   'E' elevator  'X' the old adit out of the mine
+  'B' the rock wall you blow open (solid until then)
 """
 import math
 import random
@@ -92,6 +93,8 @@ class Level:
         k = self.kind(c, r)
         if k == '#':
             return False
+        if k == 'B':
+            return self.blasted and not elk
         if elk and k not in ELK_KINDS:
             return False
         return True
@@ -103,6 +106,8 @@ class Level:
 
     has_outside = False
     planks = ()
+    blasted = False
+    dyn_boxes = ()
 
     def collide(self, x, z, rad, elk=False):
         for _ in range(3):
@@ -128,6 +133,8 @@ class Level:
                                 x += sx * (dm + rad)
                                 z += sz * (dm + rad)
             boxes = self.boxes
+            if self.dyn_boxes:
+                boxes = boxes + list(self.dyn_boxes)
             if self.planks:
                 boxes = boxes + [pl['box'] for pl in self.planks if not pl['broken']]
             for bx0, bz0, bx1, bz1 in boxes:
@@ -223,7 +230,7 @@ class Level:
                 z0 = self.oz + r * C
                 x1, z1 = x0 + C, z0 + C
                 ce = float(self.ceil[r, c])
-                narrow = k in ',EX'
+                narrow = k in ',EXB'
                 if k != 'E':
                     # (the elevator's floor is the cage's own, so it goes down with you)
                     b.quad_world((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1),
@@ -392,12 +399,15 @@ def build_upper():
     return lv
 
 
-LOW_SHIFT = 10       # rows the old lower mine moved north to make room for the rail yard
+LOW_SHIFT = 24       # rows the old lower mine moved north (the rail yard, then the Herd's caves)
+RAIL_END_ROW = 18    # the cart stops here, in the Herd's cavern
+HERD_CAVE = (9, 17, 21, 23)
+BLAST = (15, 30)     # the wall between the Herd's caves and the old mine
 
 
 def build_lower():
     SH = LOW_SHIFT
-    lv = Level(40, 52, -31.0, 0.0, -60.0, seed=404)
+    lv = Level(40, SH + 42, -31.0, 0.0, -60.0, seed=404)
     lv.carve(15, 1, 15, 1, 'E')              # elevator, bottom of the shaft
     lv.carve(15, 2, 15, 3, ',')
     # ---- the rail yard, before the big cavern
@@ -406,7 +416,19 @@ def build_lower():
     lv.carve(1, 2, 5, 8, '.')                # the pump cavern
     lv.carve(20, 5, 26, 6, '.')              # east tunnel
     lv.carve(27, 1, 33, 8, '.')              # the east gallery: the power lever
-    lv.carve(15, 8, 15, SH + 6, 'R')          # the rail tunnel, boarded up
+    lv.carve(15, 8, 15, 16, 'R')             # the rail tunnel, boarded up
+    # ---- where the rails go now: the Herd's caves, walled off from the old mine
+    lv.carve(*HERD_CAVE, '.')                # the cart stops here
+    lv.carve(4, 20, 8, 20, ',')              # west shaft
+    lv.carve(1, 21, 7, 27, '.')              # the west den
+    lv.carve(22, 19, 26, 19, ',')            # east shaft
+    lv.carve(27, 15, 33, 22, '.')            # the east den
+    lv.carve(30, 23, 30, 25, '.')
+    lv.carve(26, 26, 34, 28, '.')            # the long gallery
+    lv.carve(15, 24, 15, 29, ',')            # the old drift north, to the wall
+    lv.carve(16, 26, 16, 26, ',')
+    lv.carve(17, 25, 23, 28, '.')            # the sleeping hall
+    lv.carve(*BLAST, *BLAST, 'B')
     # ---- the mine as it was, ten rows on
     lv.carve(10, SH + 7, 20, SH + 12, '.')     # where the Goat Man lies
     lv.carve(4, SH + 9, 9, SH + 10, '.')       # west tunnel
@@ -430,8 +452,9 @@ def build_lower():
     lv.carve(20, SH + 40, 20, SH + 40, 'X')    # ...and out
     lv.elevator = (15, 1)
     lv.exit = (20, SH + 40)
-    keep = {(c, r) for r in range(0, SH + 9) for c in range(12, 19)} | {(c, r) for r in range(SH + 35, SH + 42) for c in range(17, 24)}
-    lv.grow_map(34, 34, seed=4041, barrier='R', keep_out=keep)
+    keep = {(c, r) for r in range(0, 17) for c in range(12, 19)} | {(c, r) for r in range(SH + 35, SH + 42) for c in range(17, 24)}
+    keep |= {(c, r) for r in range(28, SH + 9) for c in range(13, 18)}       # around the wall
+    lv.grow_map(34, 34, seed=4041, barrier='RB', keep_out=keep)
     lv.finish()
     lv.spawn = lv.center(15, 2)
     lv.safe = lv.center(15, 3)
@@ -439,12 +462,57 @@ def build_lower():
     lv.elk_spawn = (26, SH + 20)
     # the minecart runs from the yard up the rail tunnel into the Goat Man's cavern
     cx, _ = lv.center(15, 8)
-    lv.rail = (cx, lv.oz + 8 * C + 0.4, lv.oz + (SH + 8) * C + 0.6)        # x, z start, z end
+    lv.rail = (cx, lv.oz + 8 * C + 0.4, lv.oz + RAIL_END_ROW * C + 0.6)    # x, z start, z end
+    _pick_spots(lv)
     lv.planks = []
     for r in (11, 14):
         z = lv.oz + r * C + 1.0
         lv.planks.append({'z': z, 'broken': False, 'box': (cx - 1.0, z - 0.15, cx + 1.0, z + 0.15)})
     return lv
+
+
+def _pick_spots(lv):
+    """Where this run's pieces can go (picked from each new game): the generator the power lever
+    should have started (in the yard), and the dynamite, wire and detonator (in the Herd's caves).
+    Worked out once, so the junk along the walls can keep clear of them."""
+    from gridgrow import zones_of
+    z = zones_of(lv.g, '.,MEXRGHB', 'RB')
+    yard, herd = z.get((15, 5)), z.get((15, 20))
+    lx, lz = lv.center(*lv.elevator)
+    cx = lv.rail[0]
+    gens = []
+    for (c, r, side) in lv.wall_spots('.'):
+        x, zz = lv.center(c, r)
+        if z.get((c, r)) != yard or math.hypot(x - lx, zz - lz) < 6 or abs(x - cx) < 3.5:
+            continue
+        dc, dr = {'N': (0, 1), 'S': (0, -1), 'E': (1, 0), 'W': (-1, 0)}[side]
+        if lv.kind(c - dc, r - dr) == '#':
+            continue                       # needs room in front of it
+        gens.append((c, r, side))
+    rng = random.Random(9090)
+    rng.shuffle(gens)
+    lv.gen_spots = []
+    for s in gens:
+        x, zz = lv.center(s[0], s[1])
+        if all(math.hypot(x - lv.center(o[0], o[1])[0], zz - lv.center(o[0], o[1])[1]) > 8 for o in lv.gen_spots):
+            lv.gen_spots.append(s)
+        if len(lv.gen_spots) >= 10:
+            break
+    ex, ez = cx, lv.oz + RAIL_END_ROW * C
+    bx, bz = lv.center(*BLAST)
+    cells = []
+    for r in range(lv.rows):
+        for c in range(lv.cols):
+            if lv.g[r][c] != '.' or z.get((c, r)) != herd:
+                continue
+            if any(lv.kind(c + dc, r + dr) == '#' for dc in (-1, 0, 1) for dr in (-1, 0, 1)):
+                continue
+            x, zz = lv.center(c, r)
+            if math.hypot(x - ex, zz - ez) < 8 or math.hypot(x - bx, zz - bz) < 5:
+                continue
+            cells.append((c, r))
+    lv.herd_cells = {k for k, v in z.items() if v == herd}
+    lv.item_cells = cells
 
 
 def decorate(lv, b, seed):
@@ -455,7 +523,14 @@ def decorate(lv, b, seed):
     rail = getattr(lv, 'rail', None)
     lift = lv.center(*lv.elevator) if lv.elevator else None
 
+    gen_cells = {(s[0], s[1]) for s in getattr(lv, 'gen_spots', ())}
+    item_cells = set(getattr(lv, 'item_cells', ()))
+
     def skip(c, r):
+        if any((c + dc, r + dr) in gen_cells for dc in (-1, 0, 1) for dr in (-1, 0, 1)) or (c, r) in item_cells:
+            return True
+        if abs(c - BLAST[0]) <= 1 and BLAST[1] - 2 <= r <= BLAST[1] + 2:
+            return True
         x, z = lv.center(c, r)
         if lift and math.hypot(x - lift[0], z - lift[1]) < 4.5:
             return True
@@ -540,7 +615,7 @@ def dress_lower(lv, b):
     while z < z1:
         b.box((cx, y0 + 0.02, z), (1.2, 0.05, 0.16), L.WOOD, (0.5, 0.42, 0.35))
         z += 0.6
-    for r in range(8, SH + 7):
+    for r in range(8, 17):
         zc = lv.oz + (r + 0.5) * C
         for sx in (-0.88, 0.88):
             b.box((cx + sx, y0 + 1.25, zc), (0.18, 2.5, 0.18), L.WOOD, (0.7, 0.55, 0.4))

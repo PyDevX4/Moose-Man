@@ -807,6 +807,7 @@ class AccountMixin:
                     out.append((self.key5_pos, 'KEY'))
                 if not self.button5:
                     out.append(((C5.BUTTON[0], C5.BUTTON[1], C5.BUTTON[2]), 'BUTTON' if self.booth5_opening else 'BOOTH'))
+        out += self.p2_markers(ch)
         return out
 
     def draw_admin_marks(self):

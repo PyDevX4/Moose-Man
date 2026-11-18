@@ -87,6 +87,9 @@ class WeaponsMixin:
             if self.rifle_hits_monster(eye, f):
                 self.hitmark_t = 0.18
             return
+        if self.chapter == 3 and self.shoot_herd3(eye, f):
+            self.hitmark_t = 0.18
+            return
         if self.gun_hits_monster(eye, f):
             self.hitmark_t = 0.18
 

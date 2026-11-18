@@ -42,6 +42,7 @@ from weapons import WeaponsMixin
 from ch3escape import Ch3EscapeMixin
 from finale import FinaleMixin
 from survive import SurviveMixin
+from puzzles2 import Puzzles2Mixin
 import inventory as INV
 
 TITLE = "Moose Man"
@@ -229,7 +230,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin, FinaleMixin, SurviveMixin):
+class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin, FinaleMixin, SurviveMixin, Puzzles2Mixin):
     def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -383,6 +384,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.init_finale(prog)
         self.init_coop(prog)
         self.init_extras(prog)
+        self.init_puzzles2(prog)
         self.init_account()
         SAVE_HOOK[0] = self.on_progress_saved
         self.progress = load_progress()
@@ -560,6 +562,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self._respawn()
 
     def _respawn(self):
+        self.p2_on_respawn()
         if self.chapter == 2:
             self.respawn_ch2()
             return
@@ -3093,6 +3096,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         p.vx += (dx * speed - p.vx) * acc
         p.vz += (dz * speed - p.vz) * acc
         nx, nz = lv.collide(p.x + p.vx * dt, p.z + p.vz * dt, 0.3, elk=False)
+        nx, nz = self.herd3_push(nx, nz)
         moved = math.hypot(nx - p.x, nz - p.z)
         p.x, p.z = nx, nz
         p.y = lv.y0
@@ -3129,6 +3133,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             if lev['pulled']:
                 lev['angle'] += (2.371 - lev['angle']) * min(1.0, dt * 8)
         self.audio.loop('creak', 0.0)
+        self.p2_update_ch3(dt, keys)
+        if self.state != 'play':
+            return
         # the lower mine: what's left of the Goat Man, and then the Elk
         if lv is self.lv_low:
             gx, gz = lv.center(*lv.goat_cell)
@@ -3225,7 +3232,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                     best, bestd = ('lever', i), dot
         if best:
             return best
-        ex = self.ch3_extra_focus()
+        ex = self.p2_focus_ch3() or self.ch3_extra_focus()
         if ex:
             return ex
         if lv is self.lv_up and lv.elevator:
@@ -3237,7 +3244,10 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
     def interact_ch3(self):
         if not self.focus:
             return
-        kind, _ = self.focus
+        kind, key_ = self.focus
+        if kind in ('c3gen', 'c3item', 'c3charge', 'c3det', 'c3plunge'):
+            self.p2_interact_ch3(kind, key_)
+            return
         if kind == 'cart':
             self.interact_cart()
             return
@@ -3405,7 +3415,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 r.draw(self.m_bulb, model=T(x, y, z) @ S(0.07, 0.11, 0.07))
         for lev in lv.levers:
             r.draw(self.m_lever_box, model=T(*lev['pos']) @ RY(lev['yaw']))
-            r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
+            if not lev.get('broken'):
+                r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
         self.draw_c3_dyn(r, lv)
         if lv.elevator:
             cx, cz = lv.center(*lv.elevator)
@@ -3457,6 +3468,10 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         lit = self.flash_on and self.flicker_t <= 0
         lights = [((lp[0], lp[1] + 0.2, lp[2]), 10.0, self.lantern_col())] if lit else []
         parts = [self.elk_parts()] if self.elk is not None and not self.mp_hidden('elk') else []
+        parts += self.herd3_parts()
+        if getattr(self, 'blast_flash', 0.0) > 0 and lv is self.lv_low:
+            bx, bz = lv.center(*C3.BLAST)
+            lights = [((bx, lv.y0 + 2.0, bz - 1.5), 30.0, (6.0 * self.blast_flash, 4.0 * self.blast_flash, 2.0 * self.blast_flash))] + lights
         self.draw_world3(lv, cam, fwd, lights, parts=parts, hold=(True, p.yaw, p.pitch))
 
     def elk_face_parts(self, cam, yaw, dist):
@@ -3486,6 +3501,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.set_mouse(True)
         self.mp_ready = None
         self.block_input = False
+        self.death_note = None
         self.state = 'scare'
         self.scare_t = 0.0
         self.audio.stop_all()
@@ -3667,7 +3683,10 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         p.crouch += ((1.0 if crouch else 0.0) - p.crouch) * min(1.0, dt * 8)
         sprint = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and ln > 0 and mv >= 0 and not crouch and not p.exhausted
         p.sprinting = sprint
+        if self.carrying_plank():
+            sprint = p.sprinting = False
         speed = 1.35 if crouch else (5.1 if sprint else 2.7)
+        speed = self.c1_speed(speed)
         c, r = cell_of(p.x, p.z)
         k = w.kind(c, r) if r >= 0 else 'f'
         in_water = k == '~' and p.y < -5.3
@@ -3690,6 +3709,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         nz = p.z + p.vz * dt
         nx, nz, hitw = w.collide(nx, nz, 0.3, p.y)
         nx, nz = w.collide_extra(nx, nz, 0.3)
+        nx, nz = self.c1_shaft_move(p, nx, nz, dt, keys)
         moved = math.hypot(nx - p.x, nz - p.z)
         p.x, p.z = nx, nz
         if hitw:
@@ -3747,6 +3767,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.update_moose(dt)
         self.update_valves(dt, keys)
         self.update_c1_extras(dt, keys)
+        self.p2_update_c1(dt)
+        if self.state != 'play':
+            return
         self.update_herd(dt)
         self.update_ambience(dt)
         # water level
@@ -4071,6 +4094,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             lights = (list(extra_lights) + lights)[:8]
         if env is None:
             env = self.env(cam[2])
+            sb = getattr(self.world, 'shaft_box', None)
+            if sb and sb[0] - 2 < cam[0] < sb[2] + 2 and sb[1] < cam[2] < sb[3]:
+                env = dict(env, fogdens=0.022)        # the drop shaft: you can see down it
         else:
             env = dict(env, moondir=self.world.moon_dir)
         r.begin(cam, fwd, fov or self.settings['fov'], env, self.time, flash, flash_pos, flash_dir, lights,
@@ -4091,6 +4117,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             r.draw(self.m_valve, model=M)
             r.draw(self.m_wheel, model=M @ RZ(v['angle']))
         self.draw_c1_dyn(r, cam)
+        self.draw_p2_c1(r, cam)
         for h in self.world.herd:
             r.draw(self.m_herd, model=h['model'] if 'model' in h else T(*h['pos']) @ RY(h['yaw']) @ S(0.8 + 0.15 * h['scale']))
         for parts in moose_parts_list:
@@ -4358,7 +4385,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 if c['delay'] <= 0:
                     parts.append(car_parts(c['x'], c['z'], c['dir']))
             extra = self.car_lights()
-        self.draw_world(cam, fwd, 0.0, cam, fwd, parts, extra_lights=lights + (extra or []), hold=(True, p.yaw, p.pitch))
+        self.draw_world(cam, fwd, 0.0, cam, fwd, parts, extra_lights=lights + (extra or []), hold=(True, p.yaw, p.pitch),
+                        up=self.view_up())
 
     def face_parts(self, cam, fwd, yaw, dist):
         # skull lifted to stare straight at you, jaw hanging open, head twitching
@@ -4577,7 +4605,17 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 label = "[E] Take the elevator down" if self.power else "The elevator (no power)"
             elif kind == 'shotgun':
                 label = "[E] Take the shotgun"
-            elif kind in ('generator', 'fuse', 'fusebox'):
+            elif kind in ('c3gen', 'c3item', 'c3charge', 'c3det', 'c3plunge'):
+                label, prog_ = self.p2_label_ch3(kind, key)
+                if prog_ > 0:
+                    w = 160
+                    pygame.draw.rect(self.ui, (0, 0, 0, 160), (cx - w // 2, cy + 52, w, 10))
+                    pygame.draw.rect(self.ui, (190, 40, 30, 230), (cx - w // 2 + 1, cy + 53, int((w - 2) * min(1, prog_)), 8))
+            elif kind == 'plank1':
+                label = "[E] Pick up the plank"
+            elif kind == 'plankgap':
+                label = "[E] Lay the plank across the gap"
+            elif kind in ('generator', 'fuse', 'fusebox', 'jug4'):
                 label, prog_ = self.focus_label_ch4(kind, key)
                 if prog_ > 0:
                     w = 160
@@ -4682,10 +4720,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 n = sum(1 for x in self.lv.levers if x['pulled'])
                 k = len(self.lv.levers)
                 status = ("LEVERS %d/%d" % (n, k)) if n < k else "THE ELEVATOR HAS POWER"
-            elif not self.cart_done:
-                status = "THE MINECART HAS POWER" if self.cart_power else "FIND POWER FOR THE MINECART"
             else:
-                status = "FIND A WAY OUT"
+                status = self.ch3_status()
             self.blit_text(status, self.f_small, (215, 205, 190), (26, 56))
             if self.obj_t > 0:
                 a = int(clamp(self.obj_t / 1.0, 0, 1) * 255)
@@ -4695,6 +4731,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.blit_text(self.objective, self.f_small, (210, 200, 185), (26, 56), alpha=a)
             n = sum(1 for nn in self.world.notes.values() if nn['read'])
             self.blit_text("notes found: %d/%d" % (n, len(lore.NOTES)), self.f_small, (150, 145, 135), (26, 76), alpha=a)
+        self.draw_p2_hud()
         self.draw_weapon_hud()
         self.draw_inventory()
 
@@ -4735,7 +4772,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herdsman':
+        if getattr(self, 'death_note', None):
+            title, sub = self.death_note
+        elif self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herdsman':
             title, sub = "THE HERDSMAN", "he only wanted you to stay."
         elif self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herd':
             title, sub = "THE HERD", "you'll stand with them now."

@@ -179,6 +179,8 @@ class ExtrasMixin:
         # chapter 5's pieces are placed by its own level
         if hasattr(self, 'randomize_ch5'):
             self.randomize_ch5(random.Random(seed * 10 + 5))
+        if hasattr(self, 'randomize_p2'):
+            self.randomize_p2(seed)
 
     def reset_extras(self):
         w = self.world
@@ -207,6 +209,8 @@ class ExtrasMixin:
                 pl['broken'] = False
         self.mon_stun = {}
         self.mon_scare = {}
+        if hasattr(self, 'reset_p2'):
+            self.reset_p2()
 
     def stunned(self, attr):
         return self.time < self.mon_stun.get(attr, -1.0)
@@ -241,8 +245,8 @@ class ExtrasMixin:
                 and (w.drained or self.valves_done >= 5):
             self.flags.add('keygate')
             if not self.key_taken:
-                self.message("A gate in front of the ladder, chained and padlocked.", 4.5)
-                self.set_objective("Find the key to the ladder gate. Search the old works past the chamber.")
+                self.message("A gate across a tunnel, chained and padlocked. There's a draught coming through it.", 4.5)
+                self.set_objective("Find the key to the gate. Search the old works past the chamber.")
 
     def keygate_spot(self):
         gx, gz = W.OX + W.KEYGATE[0] * W.C + W.C / 2, W.OZ + W.KEYGATE[1] * W.C
@@ -274,7 +278,7 @@ class ExtrasMixin:
             self.message("A brass key on a ring, stamped GATE 9. It was in his pocket.", 4.5)
         else:
             self.message("%s found the key." % self.who(frm), 4)
-        self.set_objective("Take the key to the gate in front of the service ladder.")
+        self.set_objective("Take the key to the locked gate at the end of the chamber.")
 
     def act_c1gate(self, a, frm):
         w = self.world
@@ -287,7 +291,7 @@ class ExtrasMixin:
         if self.moose.active and self.mp_sim():
             self.moose.hear(lx, lz, 60.0)
         self.message("The padlock gives. The gate scrapes up.", 4)
-        self.set_objective("Climb the service ladder.")
+        self.set_objective("Follow the tunnel.")
 
     def c1_focus_cands(self):
         w = self.world
@@ -300,9 +304,11 @@ class ExtrasMixin:
         if w.keygate_open <= 0.0:
             gx, gz = self.keygate_spot()
             out.append(('keygate', 0, (gx, W.SEWER_FLOOR + 1.3, gz + 0.5)))
-        return out
+        return out + self.p2_c1_cands()
 
     def interact_c1(self, kind):
+        if self.p2_interact_c1(kind):
+            return True
         if kind == 'c1key':
             self.mp_act('c1key')
             return True
@@ -321,7 +327,7 @@ class ExtrasMixin:
                 r.draw(self.m_c1post, model=T(*lev['base']) @ RY(lev['yaw']))
                 r.draw(self.m_lever, model=T(*lev['pos']) @ RY(lev['yaw']) @ RX(lev['angle']))
             r.draw(self.m_grate1, model=T(0.0, 2.4 * w.grate_open, 47.72))
-        if cam[2] > 100:
+        if cam[2] > 60:
             gx, gz = self.keygate_spot()
             r.draw(self.m_keygate, model=T(gx, W.SEWER_FLOOR + 3.0 * w.keygate_open, gz + 0.6))
         if w.key_pos and not self.key_taken:
@@ -601,8 +607,9 @@ class ExtrasMixin:
             p.x = cx + 1.3
             p.y = lv.y0
             p.smooth_y = p.y
-            self.message("The cart slams into the buffers. A huge cavern. Something big is lying in the middle of it.", 5)
-            self.set_objective("Keep going. Find a way out of the mine.")
+            self.message("The cart slams into the buffers. A cavern -- and it isn't empty.", 5)
+            self.message("They're standing in the dark. Asleep, on their feet. Don't wake them.", 5)
+            self.set_objective("Find a way through. Quietly. Don't run near them.")
         self.update_debris(dt, lv.y0)
 
     def draw_c3_dyn(self, r, lv):
@@ -613,5 +620,6 @@ class ExtrasMixin:
         for pl in lv.planks:
             if not pl['broken']:
                 r.draw(self.m_plank, model=T(lv.rail[0], lv.y0, pl['z']))
+        self.draw_p2_c3(r, lv)
         for mesh, M in self.debris_extras():
             r.draw(mesh, model=M)

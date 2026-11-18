@@ -25,6 +25,14 @@ HOLE = (20, 3, 23, 6)           # where the floor of the sewer above came throug
 ROOMS6 = [(2, 2, 7, 9), (36, 2, 41, 9), (34, 12, 40, 17), (2, 20, 6, 24), (2, 34, 7, 39),
           (39, 21, 44, 26), (38, 33, 45, 38), (10, 39, 16, 43)]
 ANTE = (16, 14, 27, 17)
+# the first section, made bigger: the bottom of the drop shaft from Chapter One, and rooms past it
+SHAFT4 = (48, 1, 59, 12)
+SHAFT4_TOP = 26.0           # above the floor
+SHAFT4_CAT = 20.0           # where the catwalk crosses, way up
+SHAFT4_CAT_ROW = 6
+SHAFT4_GAP = (53, 55)
+BOILER = (64, 4, 70, 12)
+NORTH4 = (50, 18, 57, 23)
 GATE1_H = 6.5
 GATE2_H = 11.0
 
@@ -38,9 +46,12 @@ class SewerLevel(C3.Level):
     """The chapter 3 grid level, re-dressed as a sewer, with two gates."""
 
     def __init__(self):
-        super().__init__(47, 46, -47.0, 0.0, -30.0, seed=4404)
+        super().__init__(72, 46, -47.0, 0.0, -30.0, seed=4404)
         self.gates = {'G': {'open': 0.0, 'opening': False}, 'H': {'open': 0.0, 'opening': False}}
-        self.generators = []      # dicts: pos, yaw, running, progress, light
+        self.generators = []      # dicts: pos, yaw, running, progress, fuel, base, lamp (placed per game)
+        self.gen_spots = []       # where they can go
+        self.jug_spots = []       # where the gas can can be
+        self.jug = None           # the gas can: dict pos, taken
         self.fuses = []           # dicts: pos, taken
         self.fusebox = None       # dict: pos, yaw
         self.water = []           # (x0, z0, x1, z1) shallow water you splash through
@@ -91,9 +102,20 @@ class SewerLevel(C3.Level):
         cv(10, 39, 16, 43, '.')
         cv(12, 37, 13, 38, '.')
         cv(29, 37, 32, 38, ',')              # a crawlspace off the hall
+        # the first section goes on east, past the east chamber: the drop shaft, and more
+        cv(42, 6, 47, 6, '.')
+        cv(*SHAFT4, '.')
+        cv(60, 9, 63, 9, '.')
+        cv(*BOILER, '.')                      # the old boiler room
+        cv(53, 13, 53, 17, '.')
+        cv(*NORTH4, '.')                      # a settling room
+        cv(66, 13, 66, 16, ',')
+        cv(62, 17, 67, 22, '.')               # the pump gallery
+        cv(58, 20, 61, 20, ',')
         # three times as much sewer, grown around it; the two gates still split it into sections
         keep = {(c, r) for r in range(0, 12) for c in range(16, 27)} | {(c, r) for r in range(14, 21) for c in range(17, 27)}             | {(c, r) for r in range(35, 46) for c in range(18, 28)}
-        self.grow_map(34, 30, seed=4142, barrier='GH', keep_out=keep, corridor_kinds='...,')
+        keep |= {(c, r) for r in range(0, 14) for c in range(47, 61)}
+        self.grow_map(9, 30, seed=4142, barrier='GH', keep_out=keep, corridor_kinds='...,')
         self.finish()
         self.spawn = self.center(21, 4)
         self.safe = self.center(24, 10)      # section 1 respawn: the crawlspace
@@ -110,6 +132,10 @@ class SewerLevel(C3.Level):
                 if k == '.':
                     if inside(HALL, c, r):
                         h = 15.0 + 0.6 * math.sin(c * 0.5) * math.cos(r * 0.4)
+                    elif inside(SHAFT4, c, r):
+                        h = SHAFT4_TOP
+                    elif inside(BOILER, c, r) or inside(NORTH4, c, r):
+                        h = 6.0
                     elif inside(LANDING, c, r):
                         h = 9.0
                     elif inside(ANTE, c, r):
@@ -248,6 +274,15 @@ class SewerLevel(C3.Level):
         self.bulbs.append((x, y - 0.02, z, gen))
         self.lights.append({'pos': (x, y - 0.2, z), 'rad': rad, 'col': col, 'gen': gen})
 
+    def place_generator(self, gen, c, r, side):
+        """Stand a generator against the wall at (c, r, side)."""
+        p, n = self.wall_point(c, r, side, self.y0, off=0.75)
+        yaw = math.atan2(n[0], n[2])
+        handle = (p[0] + math.sin(yaw) * 0.56 - math.cos(yaw) * 0.3, self.y0 + 0.75, p[2] + math.cos(yaw) * 0.56 + math.sin(yaw) * 0.3)
+        lamp = (p[0] + math.sin(yaw) * 0.47 + math.cos(yaw) * 0.55, self.y0 + 1.15, p[2] + math.cos(yaw) * 0.47 - math.sin(yaw) * 0.55)
+        gen.update(pos=handle, base=p, yaw=yaw, lamp=lamp, box=(p[0] - 0.85, p[2] - 0.85, p[0] + 0.85, p[2] + 0.85))
+        return gen
+
     def add_generator(self, b, c, r, side):
         p, n = self.wall_point(c, r, side, self.y0, off=0.75)
         yaw = math.atan2(n[0], n[2])
@@ -271,6 +306,29 @@ class SewerLevel(C3.Level):
                            'yaw': self.rng.random() * 6})
 
 
+def generator_mesh():
+    """A backup generator in its own frame (front toward +z), sitting on the floor."""
+    b = MeshBuilder()
+    b.box((0, 0.12, 0), (1.7, 0.24, 1.1), L.METAL, (0.3, 0.3, 0.28))          # skid
+    b.box((0, 0.75, 0), (1.5, 1.0, 0.9), L.METAL, (0.55, 0.5, 0.22))          # yellow housing
+    b.box((0, 1.33, 0), (1.3, 0.16, 0.7), L.METAL, (0.35, 0.33, 0.3))
+    b.box((-0.45, 1.5, -0.1), (0.5, 0.25, 0.45), L.METAL, (0.5, 0.15, 0.1))    # fuel tank
+    b.cylinder(0.06, 0.06, 0.05, 8, L.METAL, (0.2, 0.2, 0.2), m=T(-0.45, 1.62, -0.1))   # its cap
+    b.cylinder(0.06, 0.06, 2.6, 8, L.METAL, (0.3, 0.3, 0.3), m=T(0.55, 1.2, -0.3))  # exhaust
+    b.box((0.3, 0.9, 0.46), (0.4, 0.3, 0.03), L.SIGN, (0.9, 0.85, 0.75))       # stencilled panel
+    b.box((-0.3, 0.75, 0.47), (0.08, 0.08, 0.06), L.BLACK)                    # cord housing
+    return b.array()
+
+
+def jug_mesh():
+    """A red jerry can of gasoline."""
+    b = MeshBuilder()
+    b.box((0, 0.22, 0), (0.18, 0.44, 0.34), L.METAL, (0.7, 0.1, 0.07))
+    b.box((0, 0.47, -0.05), (0.06, 0.05, 0.2), L.METAL, (0.25, 0.25, 0.25))   # handle
+    b.cylinder(0.035, 0.035, 0.1, 8, L.METAL, (0.75, 0.65, 0.2), m=T(0, 0.43, 0.12) @ RX(0.5))
+    return b.array()
+
+
 # ---------------------------------------------------------------------- dressing
 def build():
     lv = SewerLevel()
@@ -283,9 +341,12 @@ def build():
 def decorate(lv, b):
     """Junk, pipes and chains, kept off the landing (the fall), the gates and the generators."""
     import decor
-    busy = list(lv.boxes) + [(g['base'][0] - 1, g['base'][2] - 1, g['base'][0] + 1, g['base'][2] + 1) for g in lv.generators]
+    busy = list(lv.boxes)
+    keep = {(s[0], s[1]) for s in lv.gen_spots} | set(lv.jug_spots)
 
     def skip(c, r):
+        if any((c + dc, r + dr) in keep for dc in (-1, 0, 1) for dr in (-1, 0, 1)):
+            return True
         if inside(LANDING, c, r) or inside(ANTE, c, r):
             return True
         if any(lv.kind(c + dc, r + dr) in 'GHX' for dc in (-2, -1, 0, 1, 2) for dr in (-2, -1, 0, 1, 2)):
@@ -366,9 +427,8 @@ def dress(lv, b):
     ex, ez = lv.center(22, 43)
     b.facing_quad((ex + 1.0, y0 + 3.0, lv.oz + 45 * C - 0.05), (0, 0, -1), 5.0, 2.6, L.G_DONTLOOK, (0.7, 0.2, 0.15))
     # ---- generators and their lamps
-    lv.add_generator(b, 2, 5, 'W')
-    lv.add_generator(b, 41, 6, 'E')
-    lv.add_generator(b, 40, 15, 'E')
+    # (the three generators are placed per game: see pick_spots and extras.randomize_puzzles)
+    lv.generators = [{'running': False, 'progress': 0.0, 'fuel': False, 'fill': 0.0} for _ in range(3)]
     for gi, cells in enumerate((((4, 3), (4, 8), (12, 4), (16, 5)),
                                 ((38, 3), (38, 8), (30, 4), (27, 5)),
                                 ((36, 14), (31, 15), (38, 11), (21, 11)))):
@@ -427,10 +487,71 @@ def dress(lv, b):
         b.box((x, y0 + 0.45, z), (0.9, 0.9, 0.9), L.WOOD, (0.55, 0.5, 0.42))
         lv.boxes.append((x - 0.45, z - 0.45, x + 0.45, z + 0.45))
     # scratched into the brick: a tally, and the old graffiti
+    _dress_shaft(lv, b)
+    pick_spots(lv)
     for (c, r, side, layer) in ((7, 6, 'E', L.TALLY), (36, 8, 'W', L.G_UNDER), (16, 16, 'W', L.G_ONEMORE),
                                 (9, 30, 'W', L.HAND), (36, 26, 'E', L.TALLY), (22, 12, 'E', L.G_DONTLOOK)):
         p, n = lv.wall_point(c, r, side, y0 + 1.7, off=0.02)
         b.facing_quad(p, n, 1.6, 1.2, layer, (0.9, 0.85, 0.8))
+
+
+def _dress_shaft(lv, b):
+    """The bottom of the drop shaft. Way up there: the catwalk from Chapter One, and your plank."""
+    import shaft
+    y0 = lv.y0
+    c0, r0, c1, r1 = SHAFT4
+    x0, z0 = lv.ox + c0 * C, lv.oz + r0 * C
+    x1, z1 = lv.ox + (c1 + 1) * C, lv.oz + (r1 + 1) * C
+    zc = lv.center(0, SHAFT4_CAT_ROW)[1]
+    gx0, gx1 = lv.ox + SHAFT4_GAP[0] * C, lv.ox + (SHAFT4_GAP[1] + 1) * C
+    lights = shaft.dress(b, x0, z0, x1, z1, y0, y0 + SHAFT4_TOP, y0 + SHAFT4_CAT, zc, gx0, gx1, (),
+                         random.Random(5859), plank=True)
+    for (x, y, z, kind) in lights:
+        if kind == 'cat':
+            lv.lamp(b, x, y, z, y0 + SHAFT4_TOP, None, rad=20.0, col=(0.75, 0.8, 0.95))
+        else:
+            lv.lights.append({'pos': (x, y, z), 'rad': 10.0, 'col': (0.6, 0.22, 0.12), 'gen': None})
+    lv.water.append((x0, z0, x1, z1))
+
+
+def pick_spots(lv):
+    """Where the generators and the gas can may go, each game: anywhere in the first section."""
+    from gridgrow import zones_of
+    z = zones_of(lv.g, '.,', 'GH')
+    sec = z.get((21, 4))
+    rng = random.Random(4545)
+
+    def busy(x, zz, m=1.6):
+        return any(bx0 - m < x < bx1 + m and bz0 - m < zz < bz1 + m for bx0, bz0, bx1, bz1 in lv.boxes)
+
+    def bad(c, r):
+        return (z.get((c, r)) != sec or inside(LANDING, c, r) or inside(ANTE, c, r) or inside(SHAFT4, c, r)
+                or any(lv.kind(c + dc, r + dr) in 'GH' for dc in (-2, -1, 0, 1, 2) for dr in (-2, -1, 0, 1, 2)))
+    gens = []
+    for (c, r, side) in lv.wall_spots('.'):
+        if bad(c, r):
+            continue
+        dc, dr = {'N': (0, 1), 'S': (0, -1), 'E': (1, 0), 'W': (-1, 0)}[side]
+        if lv.kind(c - dc, r - dr) == '#' or busy(*lv.center(c, r)):
+            continue
+        gens.append((c, r, side))
+    rng.shuffle(gens)
+    for s in gens:
+        x, zz = lv.center(s[0], s[1])
+        if all(math.hypot(x - lv.center(o[0], o[1])[0], zz - lv.center(o[0], o[1])[1]) > 9 for o in lv.gen_spots):
+            lv.gen_spots.append(s)
+        if len(lv.gen_spots) >= 14:
+            break
+    cells = [(c, r) for r in range(lv.rows) for c in range(lv.cols)
+             if lv.g[r][c] == '.' and not bad(c, r) and not busy(*lv.center(c, r), m=1.0)
+             and all(lv.kind(c + dc, r + dr) != '#' for dc in (-1, 0, 1) for dr in (-1, 0, 1))]
+    rng.shuffle(cells)
+    for cell in cells:
+        x, zz = lv.center(*cell)
+        if all(math.hypot(x - lv.center(*o)[0], zz - lv.center(*o)[1]) > 10 for o in lv.jug_spots):
+            lv.jug_spots.append(cell)
+        if len(lv.jug_spots) >= 10:
+            break
 
 
 def _gate_frame(b, lv, c0, c1, r, h, thick):
