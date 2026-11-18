@@ -279,6 +279,46 @@ CH5_ENDING = [
     ],
 ]
 
+GOOD_ENDING = [
+    [
+        "You don't stop until the trees give way to the road.",
+        "",
+        "Route 9 runs south toward town. In the mirror the woods get smaller",
+        "and smaller, and nothing comes out of them.",
+        "",
+        "You leave the radio off the whole way home.",
+    ],
+    [
+        "GOOD ENDING",
+        "",
+        "",
+        "M O O S E   M A N",
+        "",
+        "thank you for playing",
+    ],
+]
+
+BAD_ENDING = [
+    [
+        "They stand you up with the others.",
+        "",
+        "It stops hurting after a while. Everything does.",
+        "",
+        "You can hear him now, the way they all hear him.",
+        "",
+        "Somebody else will come up the trail tomorrow night,",
+        "and you'll be waiting with the rest of them.",
+    ],
+    [
+        "BAD ENDING",
+        "",
+        "",
+        "M O O S E   M A N",
+        "",
+        "thank you for playing",
+    ],
+]
+
 CH2_ENDING = [
     [
         "You don't sleep.",

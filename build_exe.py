@@ -44,8 +44,9 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "The main menu screens scroll: mouse wheel on PC, drag on a phone. The browser version",
-    "no longer hides the bottom of the menus behind the phone's toolbar.",
+    "Two endings. Out of the factory gate, the Herd is waiting in the woods: JOIN THEM or FIGHT.",
+    "Fight the Herdsman and get back to your truck, or don't.",
+    "New opening: the drive up to Hollins Woods. Your truck is parked at the trailhead in Chapter 1.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

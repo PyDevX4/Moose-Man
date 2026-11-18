@@ -182,6 +182,9 @@ class Ch5Mixin:
 
     def respawn_ch5(self):
         self.msgs = []
+        if self.c5_phase == 'finale':
+            self.start_fight6(respawn=True)
+            return
         self.begin_ch5('boss' if self.c5_phase in ('boss', 'won') else 'start')
         if self.c5_phase == 'boss':
             self.message("Get up. It's still here.", 3)
@@ -514,7 +517,7 @@ class Ch5Mixin:
         self.audio.play('impact', 0.8)
         self.audio.play('heart', 0.7)
         p = self.player
-        self.spawn_blood(p.x, 1.2, p.z, 10, spread=1.2)
+        self.spawn_blood(p.x, p.y + 1.2, p.z, 10, spread=1.2)
         if self.hp5 <= 0:
             self.hp5 = 0.0
             self.kill()
@@ -547,6 +550,8 @@ class Ch5Mixin:
 
     def shoot_rays5(self, cam, f, yaw, n, dmg, spread):
         """n pellets (or one bullet) into whatever is in the way: the Herd or The Beast."""
+        if self.c5_phase == 'finale':
+            return self.shoot_rays6(cam, f, yaw, n, dmg, spread)
         herds = self.active_herds()
         for attr, h in herds:
             h._fit()
@@ -712,6 +717,9 @@ class Ch5Mixin:
             self.reload_t = 0.55
 
     def update_ch5(self, dt):
+        if self.c5_phase == 'finale':
+            self.update_finale(dt)
+            return
         p = self.player
         w = self.w5
         self.clock_t += dt
@@ -1060,12 +1068,8 @@ class Ch5Mixin:
         self.msgs = [m for m in self.msgs if m[1] > 0]
         self.fade = clamp((t - 5.0) / 1.6, 0, 1)
         if t > 6.8:
-            self.fade = 0.0
-            self.progress['ch5_done'] = True
-            self.progress.pop('resume', None)
-            self.save_prog()
-            self.ending_pages = lore.CH5_ENDING
-            self.start_ending()
+            self.fade = 1.0
+            self.start_run6()
 
     def render_exit5(self):
         t = self.x5_t
@@ -1184,6 +1188,9 @@ class Ch5Mixin:
                     r.draw(self.m_flash, model=G @ T(0, 0.025, 0.88) @ RZ(random.random() * 6) @ S(1.0 + random.random()))
 
     def render_ch5_scene(self):
+        if self.c5_phase == 'finale':
+            self.render_finale()
+            return
         p = self.player
         cam = p.eye()
         sh = getattr(self, 'shake', 0.0)
@@ -1203,6 +1210,9 @@ class Ch5Mixin:
         self.spot5 = []
 
     def render_scare_ch5(self, cam, yaw, fwd, k):
+        if self.c5_phase == 'finale':
+            self.render_scare_finale(cam, yaw, fwd, k)
+            return
         if getattr(self, 'hurt_src', None) == 'herd':
             # one of them, right in your face, arms up, eyes burning
             d = 1.25 - min(k, 1.0) * 0.3
@@ -1217,6 +1227,9 @@ class Ch5Mixin:
         self.draw_world5(cam, fwd, [(lp, 6.0, (1.5, 0.9, 0.45))], parts=parts)
 
     def draw_hud_ch5(self):
+        if self.c5_phase == 'finale':
+            self.draw_hud_finale()
+            return
         cx, cy = self.UW // 2, self.UH // 2
         b = self.beast
         if b is not None and self.c5_phase == 'boss':

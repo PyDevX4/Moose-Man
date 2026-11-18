@@ -40,6 +40,7 @@ from ch5puzzle import Ch5PuzzleMixin
 from inventory import InventoryMixin
 from weapons import WeaponsMixin
 from ch3escape import Ch3EscapeMixin
+from finale import FinaleMixin
 import inventory as INV
 
 TITLE = "Moose Man"
@@ -227,7 +228,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin):
+class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin, FinaleMixin):
     def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -378,6 +379,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.loading_screen("all three of them...")
         yield
         self.init_ch5(prog)
+        self.init_finale(prog)
         self.init_coop(prog)
         self.init_extras(prog)
         self.init_account()
@@ -689,8 +691,14 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         if st in ('coop', 'coopname', 'coopjoin', 'lobby'):
             self.coop_event(ev)
             return
+        if st == 'drive0':
+            self.drive0_event(ev)
+            return
+        if st == 'run6':
+            self.run6_event(ev)
+            return
         if st in ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3', 'elkgrab',
-                  'ch4open', 'exit4', 'card5', 'beastcs', 'exit5'):
+                  'ch4open', 'exit4', 'card5', 'beastcs', 'exit5', 'join6', 'truck6'):
             return
         if st == 'play' and self.inv_event(ev):
             return
@@ -723,7 +731,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.settings_event(ev)
         elif st == 'intro':
             if (ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN) and self.intro_t > 2.5:
-                self.start_play()
+                self.start_drive0()
         elif st == 'play':
             if ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE:
@@ -1317,7 +1325,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             b[0] += b[3] * dt
             b[1] += b[4] * dt
             b[2] += b[5] * dt
-            floor = (self.w2.ground_at(b[0], b[2]) + 0.04) if self.chapter == 2 else 0.04
+            on_w2 = self.chapter == 2 or getattr(self, 'c5_phase', '') == 'finale'
+            floor = (self.w2.ground_at(b[0], b[2]) + 0.04) if on_w2 else 0.04
             if self.chapter == 2 and abs(b[0]) < C2.CABIN_HX and abs(b[2]) < C2.CABIN_HZ:
                 floor = C2.CABIN_Y + 0.07
             if b[1] <= floor:
@@ -1638,7 +1647,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                     (2, 'start'): "Chapter 2  -  The Cabin", (2, 'wood20'): "Chapter 2  -  The Hunt",
                     (3, 'start'): "Chapter 3  -  The Cave", (3, 'lower'): "Chapter 3  -  The Deep Mine",
                     (4, 'start'): "Chapter 4  -  The Deep Sewer", (4, 'hall'): "Chapter 4  -  The Hall",
-                    (5, 'start'): "Chapter 5  -  The Drain", (5, 'boss'): "Chapter 5  -  The Beast"}
+                    (5, 'start'): "Chapter 5  -  The Drain", (5, 'boss'): "Chapter 5  -  The Beast",
+                    (5, 'finale'): "Chapter 5  -  The Woods"}
 
     def set_resume(self, chapter, checkpoint):
         if self.mp is not None:
@@ -1660,7 +1670,13 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
     def continue_game(self):
         chapter, cp = self.resume_point()
         self.new_game()
-        if chapter == 5 and cp == 'boss':
+        if chapter == 5 and cp == 'finale':
+            self.new_game()
+            self.chapter = 5
+            self.progress['ch5'] = True
+            self.f6 = None
+            self.start_run6()
+        elif chapter == 5 and cp == 'boss':
             self.begin_ch5('boss')
         elif chapter == 5:
             self.start_ch5()
@@ -3473,7 +3489,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.audio.loop('title_amb', 0.5)
             self.audio.loop('forest_amb', 0.3)
             if self.intro_t > 22:
-                self.start_play()
+                self.start_drive0()
         elif st == 'play':
             self.admin_fly(dt)
             self.weapons_tick(dt)
@@ -3511,6 +3527,14 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.update_beast_cs(dt)
         elif st == 'exit5':
             self.update_exit5(dt)
+        elif st == 'drive0':
+            self.update_drive0(dt)
+        elif st == 'run6':
+            self.update_run6(dt)
+        elif st == 'join6':
+            self.update_join6(dt)
+        elif st == 'truck6':
+            self.update_truck6(dt)
         elif st == 'scare':
             self.scare_t += dt
             if self.scare_t > 1.7 and self.mp_on():
@@ -3954,6 +3978,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
     def draw_world(self, cam, fwd, flash, flash_pos, flash_dir, moose_parts_list, fov=None, up=(0.0, 1.0, 0.0),
                    extra_lights=None, env=None, extras=(), blizzard=0.0, hold=None):
         r = self.r
+        if getattr(self, 'truck', None) is not None:
+            extras = list(extras) + self.truck_extras()       # your truck at the trailhead
         lights = self.gather_lights(cam[0], cam[2])
         ml = self.mp_lights()
         if ml:
@@ -4150,6 +4176,18 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         elif st == 'exit5':
             self.render_exit5()
             post = self.post_params({'fear': 0.0, 'red': 0.0})
+        elif st == 'drive0':
+            self.render_drive0()
+            post = self.post_params({'fear': 0.05, 'red': 0.0, 'glitch': 0.0})
+        elif st == 'run6':
+            self.render_run6()
+            post = self.run6_post()
+        elif st == 'join6':
+            self.render_join6()
+            post = self.join6_post()
+        elif st == 'truck6':
+            self.render_truck6()
+            post = self.post_params({'fear': 0.0, 'red': 0.0, 'glitch': 0.0})
         elif st == 'windowcs':
             self.render_window_cs()
             t = self.win_t
@@ -4605,7 +4643,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         a = int(clamp(t / 1.2, 0, 1) * 255)
         cx = self.UW // 2
         j = random.uniform(-3, 3) if random.random() < 0.1 else 0
-        if self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herd':
+        if self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herdsman':
+            title, sub = "THE HERDSMAN", "he only wanted you to stay."
+        elif self.chapter == 5 and getattr(self, 'hurt_src', None) == 'herd':
             title, sub = "THE HERD", "you'll stand with them now."
         elif self.chapter == 5:
             title, sub = "THE BEAST", "it is all of them now."

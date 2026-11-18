@@ -201,7 +201,26 @@ in co-op.
     shelves all **break** when it runs into them.
 - Kill it and the great gate opens. Walk out into the daylight.
 
-Checkpoints: the start of the chapter, and the start of the fight.
+## The endings
+
+Out of the gate you run back through the Chapter Two woods at dawn. Nothing is
+behind you. Ahead, the Herd is waiting in a half ring, and the one in the middle
+has a shotgun on you. **JOIN THEM** or **FIGHT** (**1** / **2**, or click):
+
+- **Join them (Bad Ending):** he lowers the gun and knocks you out. You wake up
+  in the herd room under the forest, and he has two antlers.
+- **Fight (Good Ending):** you have your shotgun. **The Herdsman** has a health
+  bar at the top of the screen. He keeps his distance, circles you, and every
+  few seconds levels the gun for most of a second before he fires. Keep moving
+  sideways and he misses. The rest of the Herd comes for you too. Kill him and
+  they all drop. Then get back to your truck at the trailhead and leave.
+
+Checkpoints: the start of the chapter, the start of the fight, and the woods
+(dying to the Herdsman puts you back at the start of that fight).
+
+The game opens with you driving up to Hollins Woods: Route 9, then the logging
+track to the trailhead. You get out, and Chapter One starts with your truck
+parked behind you. Press any key to skip the drive.
 
 ## Co-op
 
