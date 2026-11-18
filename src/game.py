@@ -41,6 +41,7 @@ from inventory import InventoryMixin
 from weapons import WeaponsMixin
 from ch3escape import Ch3EscapeMixin
 from finale import FinaleMixin
+from survive import SurviveMixin
 import inventory as INV
 
 TITLE = "Moose Man"
@@ -228,7 +229,7 @@ class Player:
         return (math.sin(self.yaw) * cp, math.sin(self.pitch), math.cos(self.yaw) * cp)
 
 
-class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin, FinaleMixin):
+class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin, ExtrasMixin, Ch4Mixin, Ch5PuzzleMixin, Ch5Mixin, FinaleMixin, SurviveMixin):
     def __init__(self, autotest=None, web_size=None):
         self.autotest = autotest
         self.settings = load_settings()
@@ -513,7 +514,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.goat = None
         self.storm = 0.0
         self.ch2_t = 0.0
-        self.ch2_phase = 'wood'      # wood -> rifle -> hunt -> run
+        self.ch2_phase = 'wood'      # wood -> rifle -> hunt -> run  ('defense': Survive mode)
+        self.survive = None
         self.has_rifle = False
         self.deer = None
         self.window_broken = False
@@ -639,7 +641,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             if g in ('shotgun', 'revolver'):
                 return 'play|gun|reload'
             return 'play'
-        if st in ('title', 'chapters', 'settings', 'pause', 'update', 'coop', 'lobby', 'note', 'dead', 'ending', 'intro'):
+        if st in ('title', 'chapters', 'survive', 'settings', 'pause', 'update', 'coop', 'lobby', 'note', 'dead', 'ending',
+                  'intro'):
             return 'menu'
         return 'watch'
 
@@ -648,7 +651,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         return mx * self.UW / self.win_w, my * self.UH / self.win_h + self.menu_scroll_y()
 
     # ---- the main menu screens scroll (drag on a phone, mouse wheel on a PC)
-    MENU_STATES = ('title', 'settings', 'update', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby', 'login')
+    MENU_STATES = ('title', 'settings', 'update', 'chapters', 'survive', 'coop', 'coopname', 'coopjoin', 'lobby', 'login')
 
     def in_scroll_menu(self):
         st = self.state
@@ -714,6 +717,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             return
         if st == 'title':
             self.menu_event(ev, self.title_items(), self.title_action)
+        elif st == 'survive':
+            self.survive_event(ev)
         elif st == 'chapters':
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.state = 'title'
@@ -813,7 +818,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                     action(i)
 
     def title_items(self):
-        items = ['CONTINUE', 'STORY MODE', 'CO-OP', 'SETTINGS', 'QUIT']
+        items = ['CONTINUE', 'STORY MODE', 'SURVIVE', 'CO-OP', 'SETTINGS', 'QUIT']
         if WP.WEB:
             items.remove('QUIT')
         if self.new_build and self.update_state != 'working':
@@ -875,6 +880,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.state = 'chapters'
             self.menu_sel = 0
             self.locked_t = 0.0
+        elif item == 'SURVIVE':
+            self.state = 'survive'
+            self.menu_sel = 0
         elif item == 'CO-OP':
             self.coop_open()
         elif item == 'SETTINGS':
@@ -1914,6 +1922,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.set_mouse(True)
 
     def respawn_ch2(self):
+        if self.ch2_phase == 'defense':
+            self.respawn_defense()
+            return
         """Back in front of the cabin. Whatever you were carrying is gone -- the
         bundles go back where you found them. The stacked pile is safe."""
         if self.ch2_phase == 'run':
@@ -2051,6 +2062,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.deer.events = []
         elif self.ch2_phase == 'run':
             self.update_run(dt)
+        elif self.ch2_phase == 'defense':
+            self.update_defense(dt)
         self.update_blood(dt)
         if self.state != 'play':
             return
@@ -2113,6 +2126,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.flicker_t = random.uniform(0.04, 0.2)
 
     def find_focus_ch2(self):
+        if self.ch2_phase == 'defense':
+            return self.defense_focus()
         p = self.player
         ex, ey, ez = p.eye()
         f = p.fwd()
@@ -2152,6 +2167,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         return None
 
     def interact_ch2(self):
+        if self.ch2_phase == 'defense':
+            self.defense_interact()
+            return
         if not self.focus:
             return
         kind, key = self.focus
@@ -2228,6 +2246,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         p.pitch = clamp(p.pitch + 0.045, -1.45, 1.45)
         if self.goat is not None and self.ch2_goat_phase():
             self.goat.hear(p.x, p.z, 40.0)          # a gunshot carries
+        if self.ch2_phase == 'defense':
+            self.defense_shot(eye, f)
+            return
         if self.rifle_hits_monster(eye, f):
             return
         dr = self.deer
@@ -2767,6 +2788,10 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             parts.append(self.chaser2_parts())
         extras = []
         fov = None
+        defense = self.ch2_phase == 'defense'
+        if defense:
+            parts += self.defense_parts()
+            extras += self.defense_extras()
         if self.holding('rifle'):
             # the rifle: at the hip, or up at the eye looking down the scope
             yaw, pitch = p.yaw, p.pitch
@@ -2785,8 +2810,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 mp = tuple(pos[i] + fwd[i] * 0.85 for i in range(3))
                 lights.insert(0, (mp, 8.0, (2.5, 1.8, 0.9)))
                 extras.append((self.m_moose['eye'], T(*mp) @ S(0.12)))
+        kw = dict(env=self.defense_env(), snowcover=True, blizzard=self.storm) if defense else {}
         self.draw_world2(cam, fwd, lights, lantern_lit=lit, hold=(True, p.yaw, p.pitch), parts=parts, extras=extras,
-                         fov=fov)
+                         fov=fov, **kw)
 
     def goat_face_parts(self, cam, yaw, dist):
         roll = random.uniform(-0.25, 0.25)
@@ -3528,7 +3554,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             return
         if st == 'chapters':
             self.locked_t = max(0.0, getattr(self, 'locked_t', 0.0) - dt)
-        if st in ('title', 'chapters', 'coop', 'coopname', 'coopjoin', 'lobby', 'login'):
+        if st in ('title', 'chapters', 'survive', 'coop', 'coopname', 'coopjoin', 'lobby', 'login'):
             self.title_t += dt
             self.audio.loop('title_amb', 0.8)
             self.audio.loop('forest_amb', 0.35)
@@ -4108,6 +4134,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.draw_account_badge()
         elif st == 'chapters':
             self.draw_chapters_ui()
+        elif st == 'survive':
+            self.draw_survive_ui()
         elif st == 'update':
             self.draw_update_ui()
         else:
@@ -4360,6 +4388,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             lp = (cam[0] + math.sin(yaw) * 0.4, cam[1] - 0.35, cam[2] + math.cos(yaw) * 0.4)
             self.draw_world3(self.lv, cam, fwd, [(lp, 6.0, (1.5, 0.9, 0.45))], parts=parts)
             return
+        if self.chapter == 2 and self.ch2_phase == 'defense':
+            self.render_scare_defense(cam, yaw, fwd, k)
+            return
         if self.chapter == 2 and self.ch2_phase == 'run':
             parts = [self.face_parts(cam, fwd, yaw, 1.75 - min(k, 1.0) * 0.45)]
             lp = (cam[0] + math.sin(yaw) * 0.4, cam[1] - 0.35, cam[2] + math.cos(yaw) * 0.4)
@@ -4572,6 +4603,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 label = "[E] Light the stove"
             elif kind == 'knife':
                 label = "[E] Take the knife"
+            elif kind in ('dstove', 'dpile', 'dwood'):
+                label = self.defense_label(kind, key)
             elif kind == 'baitsack':
                 label = "[E] Take the sack of corn (deer bait)"
             elif kind == 'baitdrop':
@@ -4623,6 +4656,9 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 status = "BAIT IS OUT   wait for a deer   [right mouse] aim   [left mouse] fire"
             elif self.ch2_phase == 'hunt':
                 status = "RIFLE   [right mouse] aim   [left mouse] fire"
+            elif self.ch2_phase == 'defense':
+                status = ''
+                self.draw_defense_hud()
             else:
                 status = "GET BACK TO THE CABIN"
             self.blit_text(status, self.f_small, (215, 205, 190), (26, 56))
@@ -4704,6 +4740,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             title, sub = "HE'S STRONGER NOW", "and he remembers you."
         elif self.chapter == 3:
             title, sub = "IT TOOK ITS TIME", "it was never in a hurry."
+        elif self.chapter == 2 and self.ch2_phase == 'defense':
+            title, sub = self.defense_dead_text()
         elif self.chapter == 2 and self.ch2_phase == 'run':
             title, sub = "HE CAME BACK FOR YOU", "the cabin was right there."
         elif self.chapter == 2:
@@ -4713,7 +4751,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.blit_text(title, self.f_big, (170, 15, 10), (cx + j, self.UH // 2 - 80), 'midtop', alpha=a)
         self.blit_text(sub, self.f_msg, (170, 160, 150), (cx, self.UH // 2), 'midtop', alpha=a)
         if t > 1.5:
-            self.blit_text("ENTER - wake up          ESC - title", self.f_hud, (200, 190, 180), (cx, self.UH // 2 + 70), 'midtop')
+            again = "ENTER - try again" if self.chapter == 2 and self.ch2_phase == 'defense' else "ENTER - wake up"
+            self.blit_text(again + "          ESC - title", self.f_hud, (200, 190, 180), (cx, self.UH // 2 + 70), 'midtop')
 
     def draw_ending_ui(self):
         lines = self.ending_pages[self.ending_page]

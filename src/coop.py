@@ -256,7 +256,7 @@ class CoopMixin:
             self.text_buf = self.settings['coop_name']
         else:
             self.state = 'title'
-            self.menu_sel = 2
+            self.menu_sel = 3
 
     def text_event(self, ev, limit, allowed, done, cancel):
         if ev.type != pygame.KEYDOWN:
@@ -275,7 +275,7 @@ class CoopMixin:
         if st == 'coop':
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.state = 'title'
-                self.menu_sel = 2
+                self.menu_sel = 3
                 return
             self.menu_event(ev, self.coop_items(), self.coop_action)
         elif st == 'coopname':

@@ -225,6 +225,30 @@ parked behind you.
 **Space** skips any cutscene (on a phone, tap **SKIP** in the corner). Not in co-op,
 where everyone sees the cutscenes together.
 
+## Survive
+
+Game modes with no story, from **SURVIVE** on the title screen (single player).
+
+**Cabin Defense:** the Chapter Two cabin in a blizzard, from midnight to 6 AM
+(twelve minutes). You have the rifle in your hands, the headlamp on and the
+lantern in your backpack.
+
+- **The fire:** a full stove burns for about two and a half minutes. Feed it at
+  the stove (**E**): from the box beside it (4 logs), from what you're carrying,
+  or from the porch woodpile (8 logs, you carry up to 4). After that the wood is
+  out in the trees.
+- **The cold:** you warm up by a burning stove. You cool slowly in a cold cabin,
+  and fast outside. Let your warmth run out and you freeze.
+- **Them:** every minute or so the Moose Man, the Goat Man or the Elk comes out
+  of the trees (you'll hear it first) and goes for the **door** or the
+  **window**. Shoot it enough (Goat Man 2 hits, Moose Man 3, Elk 4, a head shot
+  counts twice) and it runs back into the storm. From inside you can only shoot
+  out through the window or the open door. If it breaks through while you're
+  inside, you're dead. More of them come at once as the night goes on.
+- **Outside:** if one sees you, it chases you down. A light or standing up makes
+  you easier to see.
+- Your best time is shown on the menu.
+
 ## Co-op
 
 **CO-OP** on the title screen. Up to four players go through the story together.
