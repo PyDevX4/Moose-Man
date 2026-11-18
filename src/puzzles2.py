@@ -250,7 +250,7 @@ class Puzzles2Mixin:
         self.spots_plank1 = []
         for r in range(W.ROWS):
             for c in range(W.COLS):
-                if w.g[r][c] != '.' or z1.get((c, r)) not in (pre, post) or (z1.get((c, r)) == pre and r < 21):
+                if w.g[r][c] != '.' or z1.get((c, r)) != post:      # past the drained chamber, with the key
                     continue
                 if w.basin[r, c]:
                     continue
@@ -435,13 +435,14 @@ class Puzzles2Mixin:
         if not hasattr(w, 'shaft_box'):
             return nx, nz
         x0, z0, x1, z1 = w.shaft_box
-        if self.falling or p.y < W.CAT_Y - 0.7:
-            if not self.falling:
-                self.start_fall()
+        if self.falling:
             return p.x, p.z
         if not (x0 - 0.4 < nx < x1 + 0.4 and z0 < nz < z1):
             self.bal = None
             return nx, nz
+        if p.y < W.CAT_Y - 0.7:
+            self.start_fall()          # only in the shaft: anywhere else, low ground is just low ground
+            return p.x, p.z
         zc = w.cat_z
         gx0, gx1 = w.gap_x
         if not self.shaft_seen and nx > x0 - 0.2:
