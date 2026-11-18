@@ -220,7 +220,10 @@ Checkpoints: the start of the chapter, the start of the fight, and the woods
 
 The game opens with you driving up to Hollins Woods: Route 9, then the logging
 track to the trailhead. You get out, and Chapter One starts with your truck
-parked behind you. Press any key to skip the drive.
+parked behind you.
+
+**Space** skips any cutscene (on a phone, tap **SKIP** in the corner). Not in co-op,
+where everyone sees the cutscenes together.
 
 ## Co-op
 
@@ -275,7 +278,7 @@ decides, so everyone gets the same layout.
 the chapter you were on, or its checkpoint if you reached it. Chapter 1's
 checkpoint is the bottom of the storm drain, where you enter the sewers.
 Chapter 2's is having all 20 bundles of firewood stacked. Chapter 3's is the
-bottom of the elevator. Chapter 4's is entering the hall. Chapter 5's is the start of the fight. **PLAY** opens the chapter select. Each chapter is
+bottom of the elevator. Chapter 4's is entering the hall. Chapter 5's is the start of the fight. **STORY MODE** opens the chapter select. Each chapter is
 locked until you beat the one before it. Progress is
 saved to `%APPDATA%\MooseMan\progress.json`.
 

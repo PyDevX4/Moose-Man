@@ -44,9 +44,8 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Two endings. Out of the factory gate, the Herd is waiting in the woods: JOIN THEM or FIGHT.",
-    "Fight the Herdsman and get back to your truck, or don't.",
-    "New opening: the drive up to Hollins Woods. Your truck is parked at the trailhead in Chapter 1.",
+    "[Space] skips any cutscene (tap SKIP on a phone). Not in co-op.",
+    "PLAY on the title screen is now STORY MODE.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

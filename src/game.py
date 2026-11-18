@@ -691,8 +691,12 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         if st in ('coop', 'coopname', 'coopjoin', 'lobby'):
             self.coop_event(ev)
             return
+        if st in self.SKIPPABLE and self.can_skip() and (
+                (ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE) or
+                (ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and self.skip_rect().collidepoint(*self.ui_mouse()))):
+            self.skip_cutscene()
+            return
         if st == 'drive0':
-            self.drive0_event(ev)
             return
         if st == 'run6':
             self.run6_event(ev)
@@ -809,7 +813,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                     action(i)
 
     def title_items(self):
-        items = ['CONTINUE', 'PLAY', 'CO-OP', 'SETTINGS', 'QUIT']
+        items = ['CONTINUE', 'STORY MODE', 'CO-OP', 'SETTINGS', 'QUIT']
         if WP.WEB:
             items.remove('QUIT')
         if self.new_build and self.update_state != 'working':
@@ -867,7 +871,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.menu_sel = 0
         elif item == 'CONTINUE':
             self.continue_game()
-        elif item == 'PLAY':
+        elif item == 'STORY MODE':
             self.state = 'chapters'
             self.menu_sel = 0
             self.locked_t = 0.0
@@ -3459,6 +3463,52 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         self.audio.play('stinger', 1.0)
 
     # ------------------------------------------------------------------ update
+    # ---- [Space] skips a cutscene: it runs to its end in one go, silently, so whatever it
+    # does along the way (guns taken, the knife dropped, checkpoints) still happens
+    SKIPPABLE = ('cutscene', 'daylater', 'wake', 'ch2_end', 'climb', 'butcher', 'windowcs', 'wake3', 'ride', 'exit3',
+                 'elkgrab', 'ch4open', 'exit4', 'card5', 'beastcs', 'exit5', 'drive0', 'run6', 'join6', 'truck6')
+
+    def can_skip(self):
+        st = self.state
+        if st not in self.SKIPPABLE or self.mp_on() or self.admin_open:
+            return False
+        if st == 'run6' and getattr(self, 'r6_choice', None):
+            return False            # the choice is up: that's yours to make
+        return True
+
+    def skip_rect(self):
+        return pygame.Rect(self.UW - 170, self.UH - 52, 150, 34)
+
+    def draw_skip_hint(self):
+        if not self.can_skip():
+            return
+        rc = self.skip_rect()
+        pygame.draw.rect(self.ui, (0, 0, 0, 120), rc)
+        pygame.draw.rect(self.ui, (150, 140, 130, 150), rc, 1)
+        self.blit_text("SKIP" if WP.WEB else "[SPACE] SKIP", self.f_small, (200, 190, 180), rc.center, 'center')
+
+    def skip_cutscene(self):
+        st = self.state
+        if not self.can_skip():
+            return
+        A = self.audio
+        quiet = lambda *a, **k: None
+        names = ('play', 'play3d', 'play_rand', 'loop', 'loop3d')
+        for name in names:
+            setattr(A, name, quiet)
+        try:
+            for _ in range(3000):
+                self.time += 0.05
+                self.update(0.05)
+                if self.state != st or (st == 'run6' and getattr(self, 'r6_choice', None)):
+                    break
+        finally:
+            for name in names:
+                A.__dict__.pop(name, None)
+        A.stop_all()
+        A.stop_loops()
+        self.msgs = []
+
     def update(self, dt):
         self.mp_update(dt)
         self.inv_tick()
@@ -4206,6 +4256,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.blit_text('   '.join(tags), self.f_small, (230, 90, 70), (self.UW // 2, 8), 'midtop')
         if getattr(self, 'keypad_open', False) and self.state in PLAYISH:
             self.draw_keypad()
+        self.draw_skip_hint()
         if self.settings['show_fps']:
             img = self.f_small.render("%d fps" % self.clock.get_fps(), True, (200, 200, 200))
             self.ui.blit(img, (self.UW - img.get_width() - 10, self.UH - 20))

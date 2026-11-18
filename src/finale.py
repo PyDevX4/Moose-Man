@@ -400,10 +400,6 @@ class FinaleMixin:
         p.reset(x, float(W.terrain_h(x, z)), z, 0.0)
         self.start_play()
 
-    def drive0_event(self, ev):
-        if self.d0_t > 0.8 and (ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN):
-            self.end_drive0()
-
     def render_drive0(self):
         t = self.d0_t
         tr = self.truck
@@ -446,8 +442,6 @@ class FinaleMixin:
         if 6.0 < t < 10.5:
             a = int(255 * sm(t, 6.0, 7.0) * (1 - sm(t, 9.5, 10.5)))
             self.blit_text("Hollins Woods  -  11:54 PM", self.f_hud, (200, 190, 175), (self.UW // 2, self.UH - 110), 'midtop', alpha=a)
-        if t > 0.8 and int(self.time * 2) % 2 == 0:
-            self.blit_text("press any key to skip", self.f_small, (120, 115, 110), (self.UW - 20, self.UH - 30), 'topright')
 
     # ------------------------------------------------------------------ out of the factory: the woods
     def find_run_line(self):
