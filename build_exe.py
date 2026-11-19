@@ -44,8 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Fixed: walking down into the drained chamber in Chapter 1 no longer freezes you.",
-    "Chapter 1: the plank is now always past the drained chamber, in the same part of the sewers as the key.",
+    "Fixed: turning noclip off in Chapter 1 could leave you frozen (\"No--\").",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",

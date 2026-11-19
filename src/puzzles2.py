@@ -435,14 +435,23 @@ class Puzzles2Mixin:
         if not hasattr(w, 'shaft_box'):
             return nx, nz
         x0, z0, x1, z1 = w.shaft_box
+        if self.fly_keys_blocked():
+            # flying (admin noclip / freecam): no catwalk, no plank, no falling
+            if self.falling or self.bal:
+                self.falling = False
+                self.bal = None
+                self.fade = 0.0
+            return nx, nz
         if self.falling:
             return p.x, p.z
         if not (x0 - 0.4 < nx < x1 + 0.4 and z0 < nz < z1):
             self.bal = None
             return nx, nz
-        if p.y < W.CAT_Y - 0.7:
-            self.start_fall()          # only in the shaft: anywhere else, low ground is just low ground
+        if W.CAT_Y - 3.0 < p.y < W.CAT_Y - 0.7:
+            self.start_fall()          # only in the shaft, and only just off the catwalk
             return p.x, p.z
+        if p.y <= W.CAT_Y - 3.0:
+            return nx, nz              # already down there (an admin flew you): just walk about
         zc = w.cat_z
         gx0, gx1 = w.gap_x
         if not self.shaft_seen and nx > x0 - 0.2:
@@ -507,7 +516,7 @@ class Puzzles2Mixin:
 
     def p2_update_c1(self, dt):
         p = self.player
-        if self.falling:
+        if self.falling and not self.fly_keys_blocked():
             self.fade = clamp((W.CAT_Y - 4.0 - p.y) / 12.0, 0.0, 1.0)
             if p.y < W.CAT_Y - 16.0:
                 self.fade = 0.0
