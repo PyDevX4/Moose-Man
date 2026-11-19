@@ -1042,7 +1042,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
         for i, v in enumerate(self.world.valves):
             if not v['done']:
                 cands.append(('valve', i, v['pos']))
-        if self.world.ladder_pos and self.world.keygate_open >= 0.8:
+        if self.world.ladder_pos:
             lx, ly, lz = self.world.ladder_pos
             cands.append(('ladder', 0, (lx, ly + 0.3, lz + 0.32)))     # on the rungs: you can't walk past them
         cands += self.c1_focus_cands()
@@ -1056,7 +1056,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             if dot > need and dot > bestd:
                 bestd = dot
                 best = (kind, key)
-        if best is None and self.world.ladder_pos and self.world.keygate_open >= 0.8:
+        if best is None and self.world.ladder_pos:
             # standing at the foot of the ladder: it's the ladder, whichever way you look
             lx, _, lz = self.world.ladder_pos
             if math.hypot(p.x - lx, p.z - lz) < 1.3 and abs(p.y - W.SEWER_FLOOR) < 1.0:
@@ -1110,12 +1110,11 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
                 self.set_objective("Open the five relief valves to drain Chamber C. (%d/5)" % self.valves_done)
                 self.flags.add('memo')
         elif kind == 'ladder':
-            if (self.world.drained or self.valves_done >= 5) and self.mp_on():
+            # it's past the gate, the tunnel and the drop shaft: being here is enough
+            if self.mp_on():
                 self.message("Everyone has to be at the ladder.", 2.5)
-            elif self.world.drained or self.valves_done >= 5:
-                self.start_climb()
             else:
-                self.message("The ladder is on the other side of the water.")
+                self.start_climb()
 
     def valve_complete(self, v):
         v['done'] = True
@@ -3790,8 +3789,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             self.message("The water is gone. The stairs lead down... and up the other side.", 5)
         if self.mp_on() and w.ladder_pos and not self.escape:
             lx, _, lz = w.ladder_pos
-            self.mp_gather('ladder', (w.drained or self.valves_done >= 5) and w.keygate_open >= 0.8 and
-                           math.hypot(p.x - lx, p.z - lz) < 2.6)
+            self.mp_gather('ladder', math.hypot(p.x - lx, p.z - lz) < 2.6)
         self.focus = self.find_focus()
         self.obj_t = max(0.0, self.obj_t - dt)
         self.phantom = max(0.0, self.phantom - dt)
@@ -4662,7 +4660,7 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             elif kind == 'cart':
                 label = "[E] Get in the minecart" if self.cart_power else "The minecart (no power)"
             else:
-                label = "[E] Climb the ladder" if self.world.drained else "The ladder"
+                label = "[E] Climb the ladder"
             self.blit_text(label, self.f_hud, (230, 225, 215), (cx, cy + 24), 'midtop')
         if p.stamina < 99:
             w = 120

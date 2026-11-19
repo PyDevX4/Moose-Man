@@ -44,7 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Fixed: the ladder at the end of Chapter 1 now always shows [E] Climb when you're standing at it.",
+    "Fixed: the Chapter 1 ladder works as soon as you reach it (it no longer checks for the drained chamber and the gate, which are behind you anyway).",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
