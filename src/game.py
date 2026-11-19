@@ -1043,7 +1043,8 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             if not v['done']:
                 cands.append(('valve', i, v['pos']))
         if self.world.ladder_pos and self.world.keygate_open >= 0.8:
-            cands.append(('ladder', 0, self.world.ladder_pos))
+            lx, ly, lz = self.world.ladder_pos
+            cands.append(('ladder', 0, (lx, ly + 0.3, lz + 0.32)))     # on the rungs: you can't walk past them
         cands += self.c1_focus_cands()
         for kind, key, pos in cands:
             dx, dy, dz = pos[0] - ex, pos[1] - ey, pos[2] - ez
@@ -1055,6 +1056,11 @@ class Game(InventoryMixin, WeaponsMixin, Ch3EscapeMixin, CoopMixin, AccountMixin
             if dot > need and dot > bestd:
                 bestd = dot
                 best = (kind, key)
+        if best is None and self.world.ladder_pos and self.world.keygate_open >= 0.8:
+            # standing at the foot of the ladder: it's the ladder, whichever way you look
+            lx, _, lz = self.world.ladder_pos
+            if math.hypot(p.x - lx, p.z - lz) < 1.3 and abs(p.y - W.SEWER_FLOOR) < 1.0:
+                best = ('ladder', 0)
         return best
 
     def pull_lever_press(self):

@@ -44,7 +44,7 @@ ICON = "icon.ico"
 
 # What the update screen shows players; one entry per line. Edit for each release.
 NOTES = "\n".join([
-    "Fixed: turning noclip off in Chapter 1 could leave you frozen (\"No--\").",
+    "Fixed: the ladder at the end of Chapter 1 now always shows [E] Climb when you're standing at it.",
 ])
 DOWNLOAD_NOTE = "\n".join([
     "---",
